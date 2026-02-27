@@ -262,19 +262,20 @@ export default function App() {
   };
 
   const shareSelectedNotes = (format) => {
-    const targetNotes = notes.filter(n => selectedNoteIds.includes(n.id));
+    const currentIds = viewMode === 'editor' ? [activeNoteId] : selectedNoteIds;
+    const targetNotes = notes.filter(n => currentIds.includes(n.id));
     if (targetNotes.length === 0) return;
 
     if (format === 'json') {
       copyToClipboard(JSON.stringify(targetNotes, null, 2));
     } else if (format === 'txt') {
-      const shareContent = targetNotes.map(n => `TITLE: ${n.title || 'Untitled'}\n${n.content}\n`).join('\n---\n');
+      const shareContent = targetNotes.map(n => `TITLE: ${n.title || 'Untitled'}\n${n.content ? n.content.replace(/<[^>]*>?/gm, '') : ''}\n`).join('\n---\n');
       copyToClipboard(shareContent);
     } else if (format === 'download') {
       const exportData = { notes: targetNotes, folders, exportDate: new Date().toISOString() };
       downloadFile(JSON.stringify(exportData, null, 2), `SmartNotes_Export_${Date.now()}.json`, 'application/json');
     } else if (format === 'system') {
-      const text = targetNotes.map(n => `${n.title || 'Untitled'}\n${n.content}`).join('\n\n');
+      const text = targetNotes.map(n => `${n.title || 'Untitled'}\n${n.content ? n.content.replace(/<[^>]*>?/gm, '') : ''}`).join('\n\n');
       if (navigator.share) {
         navigator.share({ title: 'My Smart Notes', text }).catch(() => copyToClipboard(text));
       } else {
@@ -486,6 +487,35 @@ export default function App() {
                 >
                   {isSelectMode ? <X className="w-3.5 h-3.5" /> : <ListChecks className="w-3.5 h-3.5" />}
                   {isSelectMode ? 'Cancel' : 'Manage'}
+                </button>
+              </div>
+            )}
+
+            {viewMode === 'editor' && (
+              <div className="flex items-center gap-1 sm:gap-1.5 mr-1 sm:mr-2">
+                <div className="relative">
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveDropdown(activeDropdown === 'shareEditor' ? null : 'shareEditor'); }}
+                    className={`p-2.5 rounded-xl transition-all ${darkMode ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <Share2 className="w-5 h-5" />
+                  </button>
+                  {activeDropdown === 'shareEditor' && (
+                    <div className={`absolute top-full right-0 mt-2 w-56 rounded-2xl border shadow-2xl py-2 z-[9999] animate-dropdown ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'}`}>
+                      <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('txt'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                        <Copy className="w-3.5 h-3.5 text-indigo-500" /> Copy Plain Text
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('json'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                        <Database className="w-3.5 h-3.5 text-emerald-500" /> Copy JSON
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('download'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                        <Download className="w-3.5 h-3.5 text-amber-500" /> Download Note
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => deleteNotes([activeNoteId])} className="p-2.5 rounded-xl transition-all text-red-500/70 hover:bg-red-500/10 hover:text-red-500">
+                  <Trash2 className="w-5 h-5" />
                 </button>
               </div>
             )}
