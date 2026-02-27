@@ -30,10 +30,41 @@ import {
   RefreshCw,
   Cloud,
   Download,
-  Copy
+  Copy,
+  Bold,
+  Italic,
+  Underline,
+  Heading1,
+  Heading2,
+  List as ListIcon,
+  ListOrdered,
+  Image as ImageIcon,
+  Quote
 } from 'lucide-react';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+const EditorBlock = ({ content, onChange }) => {
+  const contentRef = useRef(null);
+
+  useEffect(() => {
+    if (contentRef.current && content !== contentRef.current.innerHTML) {
+      contentRef.current.innerHTML = content || '';
+    }
+  }, [content]);
+
+  return (
+    <div
+      ref={contentRef}
+      contentEditable
+      onInput={e => {
+        if (onChange) onChange(e.currentTarget.innerHTML);
+      }}
+      className="w-full h-full outline-none text-lg lg:text-xl leading-relaxed pt-4 pb-40 custom-editor"
+      style={{ minHeight: '60vh' }}
+    />
+  );
+};
 
 export default function App() {
   // --- State Management ---
@@ -59,9 +90,10 @@ export default function App() {
 
   const [darkMode, setDarkMode] = useState(() => {
     try {
-      return localStorage.getItem('smart-theme-v6') === 'dark';
+      const stored = localStorage.getItem('smart-theme-v6');
+      return stored !== null ? stored === 'dark' : true;
     } catch (e) {
-      return false;
+      return true;
     }
   });
 
@@ -321,9 +353,14 @@ export default function App() {
         </div>
       )}
 
+      {/* Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[90] sm:hidden" onClick={() => setIsSidebarOpen(false)} />
+      )}
+
       {/* Sidebar */}
-      <aside className={`flex flex-col border-r h-full transition-all duration-300 ease-in-out shrink-0 overflow-hidden z-[100] ${isSidebarOpen ? 'w-72 opacity-100' : 'w-0 opacity-0'} ${darkMode ? 'bg-[#111111] border-zinc-800' : 'bg-white border-slate-200'}`}>
-        <div className="p-6 flex items-center justify-between border-b border-zinc-800/50 h-20 shrink-0">
+      <aside className={`absolute sm:relative left-0 top-0 bottom-0 h-full flex flex-col border-r transition-all duration-300 ease-in-out shrink-0 overflow-hidden z-[100] ${isSidebarOpen ? 'w-[85vw] max-w-[320px] sm:w-72 opacity-100 shadow-2xl sm:shadow-none translate-x-0' : 'w-0 opacity-0 -translate-x-full sm:translate-x-0'} ${darkMode ? 'bg-[#111111] border-zinc-800' : 'bg-white border-slate-200'}`}>
+        <div className="p-4 sm:p-6 flex items-center justify-between border-b border-zinc-800/50 h-20 shrink-0">
           <div className="flex items-center gap-2 cursor-pointer group" onClick={() => { setViewMode('grid'); setActiveFolderId('all'); }}>
             <div className="bg-indigo-600 p-1.5 rounded-lg shadow-lg shadow-indigo-600/20 group-hover:scale-110 transition-transform"><Book className="w-4 h-4 text-white" /></div>
             <h1 className="font-bold text-lg whitespace-nowrap tracking-tight">SmartNotes AI</h1>
@@ -431,10 +468,10 @@ export default function App() {
               </div>
             )}
 
-            <button onClick={addNote} className="bg-indigo-600 text-white p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 active:scale-95 transition-all ml-2">
+            <button onClick={addNote} className="bg-indigo-600 text-white p-2.5 sm:px-4 sm:py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 active:scale-95 transition-all ml-1 sm:ml-2 shrink-0">
               <Plus className="w-4 h-4" /><span className="hidden sm:inline">New Note</span>
             </button>
-            <button onClick={() => setIsAiOpen(!isAiOpen)} className={`p-2.5 rounded-xl transition-all ${isAiOpen ? 'bg-indigo-600 text-white' : (darkMode ? 'bg-zinc-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600')}`}>
+            <button onClick={() => setIsAiOpen(!isAiOpen)} className={`p-2.5 rounded-xl transition-all shrink-0 ${isAiOpen ? 'bg-indigo-600 text-white' : (darkMode ? 'bg-zinc-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600')}`}>
               <Sparkles className="w-5 h-5" />
             </button>
           </div>
@@ -472,7 +509,7 @@ export default function App() {
                       )}
                     </div>
                     <h3 className="font-bold text-lg mb-2 line-clamp-2 leading-tight group-hover:text-indigo-500">{note.title || 'Untitled'}</h3>
-                    <p className={`text-sm opacity-50 flex-1 overflow-hidden line-clamp-3 leading-relaxed ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>{note.content || 'No content yet...'}</p>
+                    <p className={`text-sm opacity-50 flex-1 overflow-hidden line-clamp-3 leading-relaxed ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>{note.content ? note.content.replace(/<[^>]*>?/gm, '').substring(0, 150) : 'No content yet...'}</p>
                     <div className="mt-4 pt-4 border-t border-zinc-800/10 flex items-center justify-between opacity-30 text-[10px] font-bold uppercase tracking-widest">
                       <span>{new Date(note.timestamp).toLocaleDateString()}</span>
                       <Clock className="w-3.5 h-3.5" />
@@ -481,27 +518,61 @@ export default function App() {
                 ))}
               </div>
             ) : (
-              <div className="max-w-4xl mx-auto w-full h-full flex flex-col animate-in-fade">
-                <textarea value={activeNote?.content || ''} onChange={e => setNotes(notes.map(n => n.id === activeNoteId ? { ...n, content: e.target.value } : n))} className="w-full h-full resize-none bg-transparent outline-none text-lg lg:text-xl leading-relaxed pt-10 pb-40" placeholder="Start writing something brilliant..." autoFocus />
+              <div className="max-w-4xl mx-auto w-full h-full flex flex-col animate-in-fade relative">
+                <div className={`flex flex-wrap items-center gap-1 sm:gap-2 p-1 sm:p-2 mb-4 rounded-xl border ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'} sticky top-0 z-10 shadow-sm max-w-full sm:max-w-fit mt-2`}>
+                  {[
+                    { icon: Bold, cmd: 'bold' },
+                    { icon: Italic, cmd: 'italic' },
+                    { icon: Underline, cmd: 'underline' },
+                    { icon: Heading1, cmd: 'formatBlock', arg: 'H1' },
+                    { icon: Heading2, cmd: 'formatBlock', arg: 'H2' },
+                    { icon: ListIcon, cmd: 'insertUnorderedList' },
+                    { icon: ListOrdered, cmd: 'insertOrderedList' },
+                    { icon: Quote, cmd: 'formatBlock', arg: 'BLOCKQUOTE' }
+                  ].map(({ icon: Icon, cmd, arg }, i) => (
+                    <button key={i} onMouseDown={(e) => { e.preventDefault(); document.execCommand(cmd, false, arg); }} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
+                      <Icon className="w-4 h-4" />
+                    </button>
+                  ))}
+                  <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-zinc-800' : 'bg-slate-200'}`} />
+                  <label className={`p-2 rounded-lg transition-colors cursor-pointer ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
+                    <ImageIcon className="w-4 h-4" />
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => document.execCommand('insertImage', false, ev.target.result);
+                        reader.readAsDataURL(file);
+                      }
+                      e.target.value = null;
+                    }} />
+                  </label>
+                </div>
+                <EditorBlock content={activeNote?.content || ''} onChange={content => setNotes(notes.map(n => n.id === activeNoteId ? { ...n, content } : n))} />
               </div>
             )}
           </div>
 
+          {/* AI Sidebar Overlay */}
+          {isAiOpen && (
+            <div className="fixed inset-0 bg-black/50 z-[105] sm:hidden" onClick={() => setIsAiOpen(false)} />
+          )}
+
           {/* AI Sidebar */}
-          <aside className={`${isAiOpen ? 'w-96 border-l' : 'w-0 border-l-0'} transition-all duration-300 border-zinc-800/20 overflow-hidden flex flex-col bg-zinc-900/30 backdrop-blur-md shrink-0 z-[110]`}>
-            <div className="p-6 border-b border-zinc-800/20 flex items-center justify-between h-20 shrink-0">
-              <div className="flex items-center gap-2 font-bold text-xs tracking-widest uppercase text-indigo-400"><Sparkles className="w-4 h-4 animate-pulse" /> AI Assistant</div>
-              <button onClick={() => setIsAiOpen(false)}><X className="w-4 h-4" /></button>
+          <aside className={`absolute sm:relative right-0 top-0 bottom-0 transition-all duration-300 w-[85vw] max-w-[380px] sm:w-96 ${isAiOpen ? 'translate-x-0 border-l shadow-2xl sm:shadow-none' : 'translate-x-full sm:w-0 sm:border-l-0 opacity-0 sm:opacity-100'} ${darkMode ? 'border-zinc-800/20 bg-zinc-900/95 sm:bg-zinc-900/30' : 'border-slate-200/50 bg-white sm:bg-white/90'} overflow-hidden flex flex-col backdrop-blur-md shrink-0 z-[110]`}>
+            <div className={`p-4 sm:p-6 border-b flex items-center justify-between h-20 shrink-0 ${darkMode ? 'border-zinc-800/20' : 'border-slate-200/50'}`}>
+              <div className={`flex items-center gap-2 font-bold text-xs tracking-widest uppercase ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}><Sparkles className="w-4 h-4 animate-pulse" /> AI Assistant</div>
+              <button className={`transition-colors ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-slate-400 hover:text-slate-800'}`} onClick={() => setIsAiOpen(false)}><X className="w-4 h-4" /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
               {chatHistory.map((msg, i) => (
                 <div key={i} className={`flex flex-col animate-in-slide-up ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white' : (darkMode ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-200 text-slate-800 shadow-sm')}`}>{msg.text}</div>
+                  <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white' : (darkMode ? 'bg-zinc-800 text-zinc-300' : 'bg-white border border-slate-200 text-slate-800 shadow-sm')}`}>{msg.text}</div>
                 </div>
               ))}
-              {isTyping && <div className="text-[10px] font-bold text-indigo-400 animate-pulse-subtle">Thinking...</div>}
+              {isTyping && <div className={`text-[10px] font-bold animate-pulse-subtle ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Thinking...</div>}
             </div>
-            <form onSubmit={handleAskAI} className="p-6 border-t border-zinc-800/20">
+            <form onSubmit={handleAskAI} className={`p-6 border-t ${darkMode ? 'border-zinc-800/20' : 'border-slate-200/50'}`}>
               <div className="relative">
                 <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Type a message..." className={`w-full rounded-xl py-3 pl-4 pr-10 text-xs outline-none border transition-all ${darkMode ? 'bg-zinc-800/50 border-zinc-700 focus:border-indigo-500' : 'bg-slate-100 border-slate-200 focus:border-indigo-400'}`} />
                 <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 text-indigo-400"><Send className="w-3.5 h-3.5" /></button>
@@ -550,7 +621,10 @@ export default function App() {
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(100, 100, 100, 0.2); border-radius: 10px; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: ${darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'}; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+        ::-webkit-scrollbar-thumb:hover { background: ${darkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'}; border: 2px solid transparent; background-clip: padding-box; }
         @keyframes toast-in-out { 0% { transform: translate(-50%, 20px); opacity: 0; } 15%, 85% { transform: translate(-50%, 0); opacity: 1; } 100% { transform: translate(-50%, 20px); opacity: 0; } }
         .animate-toast { animation: toast-in-out 2000ms ease-in-out forwards; }
         @keyframes dropdown-in { from { opacity: 0; transform: translateY(-10px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -562,7 +636,15 @@ export default function App() {
         @keyframes slide-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-in-slide-up { animation: slide-up 200ms ease-out both; }
         @keyframes pulse-subtle { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        .animate-pulse-subtle { animation: pulse-subtle 2s ease-in-out infinite; }
+        .custom-editor[contenteditable]:empty::before { content: "Start writing something brilliant..."; opacity: 0.3; }
+        .custom-editor img { max-width: 100%; border-radius: 0.75rem; margin: 1.5rem 0; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .custom-editor h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 1rem; margin-top: 2rem; line-height: 1.2; }
+        .custom-editor h2 { font-size: 1.875rem; font-weight: 700; margin-bottom: 0.75rem; margin-top: 1.5rem; }
+        .custom-editor ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .custom-editor ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .custom-editor a { color: #4f46e5; text-decoration: underline; }
+        .custom-editor blockquote { border-left: 4px solid #4f46e5; padding-left: 1.25rem; font-style: italic; opacity: 0.9; margin: 1.5rem 0; background: ${darkMode ? 'rgba(79, 70, 229, 0.1)' : 'rgba(79, 70, 229, 0.05)'}; padding: 1rem 1rem 1rem 1.25rem; border-radius: 0 0.5rem 0.5rem 0; }
+        .custom-editor div, .custom-editor p { min-height: 1.5rem; }
       `}</style>
     </div>
   );
