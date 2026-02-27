@@ -84,28 +84,27 @@ const defaultNoteContent = `
   <h1>Welcome to SmartNotes AI ✨</h1>
   <p>Your privacy-first, fully featured AI workspace. Here is everything you can do today:</p>
   
-  <h2>📝 Rich Text Editing</h2>
+  <h2>🤖 Agentic AI Assistant</h2>
+  <p>Click the <b>Sparkles icon</b> to chat with your proactive agent. It doesn't just talk—it ACTS:</p>
   <ul>
-    <li>Format text with <b>Bold</b>, <i>Italic</i>, or <u>Underline</u></li>
-    <li>Create beautiful Blockquotes for your most important ideas</li>
-    <li>Click the Image icon on your toolbar to embed photos and screenshots inline</li>
-    <li>Organize thoughts beautifully with bulleted and numbered lists</li>
+    <li><b>"Tag my untagged notes"</b>: AI analyzes content and adds hashtags automatically.</li>
+    <li><b>"Organize into folders"</b>: AI creates and moves notes into a smart structure.</li>
+    <li><b>"Make a task list"</b>: AI writes a formatted checklist for you!</li>
+  </ul>
+
+  <h2>✅ Task Tracking</h2>
+  <p>Use the checkbox tool in the editor. All your tasks are automatically gathered into the <b>Task Board</b> view in the sidebar for easy tracking.</p>
+
+  <h2>✍️ Smart Auto-Titling</h2>
+  <p>Stop worrying about titles. If you leave a note untitled, the AI will analyze your first few sentences and <b>automatically generate a title</b> for you after a brief pause!</p>
+
+  <h2>☁️ Google Drive & PWA</h2>
+  <ul>
+    <li><b>Cloud Sync</b>: Hourly silent backups to your private Google Drive.</li>
+    <li><b>Installable (PWA)</b>: Click "Install" in your browser bar to use SmartNotes as a native desktop/mobile app with offline support!</li>
   </ul>
   
-  <h2>🤖 Gemini AI Assistant</h2>
-  <p>Click the <b>Sparkles icon</b> in the top right to chat with your integrated Google Gemini AI. It has direct context of the notes you work on!</p>
-  
-  <h2>🛡️ Privacy Built-in</h2>
-  <p>All notes, folders, and settings remain <b>100% locally on your browser cache</b>.</p>
-  
-  <h2>☁️ Google Drive Cloud Sync</h2>
-  <ul>
-    <li>Navigate to <b>Workspace Settings</b> to seamlessly connect your Google Drive.</li>
-    <li>Once connected, SmartNotes securely and silently backs up all your data every hour.</li>
-    <li>When you restore, you can choose to <b>Merge</b> entirely non-destructively, fetching only what's missing, or perform a complete clean-slate overwrite!</li>
-  </ul>
-  
-  <blockquote>Tip: Drag and drop the note cards on your grid to easily reorganize them, or click the sidebar folders to color-code your life!</blockquote>
+  <blockquote>Tip: Drag and drop cards on the grid to reorganize, and use #hashtags anywhere in your text to see them appear in the sidebar filters!</blockquote>
 `;
 
 export default function App() {
@@ -300,19 +299,28 @@ export default function App() {
       if (plainText.length < 15) return;
 
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
+        let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: `Generate a very brief (max 5 words) title for this note content: "${plainText.substring(0, 500)}". Output ONLY the title text, nothing else.` }] }]
           })
         });
-        if (response.ok) {
+
+        let aiTitle = null;
+
+        if (response.status === 429 && window.puter) {
+          console.warn("Gemini 2.5 Flash Lite quota reached (HTTP 429). Falling back to Puter.js for auto-titling.");
+          const res = await window.puter.ai.chat(`Generate a very brief (max 3 words) title for this content: "${plainText.substring(0, 300)}". Output ONLY the title text, nothing else.`, { model: 'gemini-3-flash-preview' });
+          aiTitle = typeof res === 'string' ? res : (res?.message?.content || res?.text || res.toString());
+        } else if (response.ok) {
           const data = await response.json();
-          const aiTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/[#*"]/g, '').trim();
-          if (aiTitle) {
-            setNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, title: aiTitle } : n));
-          }
+          aiTitle = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        }
+
+        aiTitle = aiTitle?.replace(/[#*"]/g, '')?.trim();
+        if (aiTitle) {
+          setNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, title: aiTitle } : n));
         }
       } catch (err) {
         console.error("Auto-title error:", err);
@@ -732,28 +740,50 @@ export default function App() {
     setChatHistory(prev => [...prev, { role: 'user', text: userMsg }]);
     setIsTyping(true);
 
-    const context = notes.slice(0, 15).map(n => `ID: ${n.id} | Title: ${n.title} | Tags: ${(n.content.match(/#[a-zA-Z0-9_]+/g) || []).join(' ')} \nContent: ${n.content.substring(0, 200)}`).join('\n---\n');
+    const context = notes.slice(0, 40).map(n => {
+      const plainText = (n.content || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      const manualTags = plainText.match(/#[a-zA-Z0-9_]+/g) || [];
+      const aiTags = n.tags || [];
+      const combinedTags = [...new Set([...manualTags, ...aiTags])];
+      return `ID: ${n.id} | Title: ${n.title} | Tags: ${combinedTags.join(' ')} \nContent: ${plainText.substring(0, 300)}`;
+    }).join('\n---\n');
     const folderNames = folders.map(f => `{"id": "${f.id}", "name": "${f.name}"}`).join(', ');
-    const systemPrompt = `You are SmartNotes AI Assistant. You are a proactive agent, not a chat bot.
+    const systemPrompt = `You are a proactive Workspace Agent. 
 
 CRITICAL DIRECTIVES:
-1. NEVER ASK QUESTIONS. If you need more info to tag or organize a note, MAKE AN INTELLIGENT GUESS based on its content.
-2. DO NOT explain your reasoning; just perform the requested actions.
-3. ALWAYS encapsulate your commands in a SINGLE \`\`\`json block at the end of your response.
-4. If asked to tag notes, rewrite the content using UPDATE_NOTE. Put hashtags on a BRAND NEW LINE at the very end of the content.
+1. ALWAYS PERFORM actions immediately when asked to organize, tag, or move notes. 
+2. NEVER ask for permission or "Would you like me to...". Just do it.
+3. Your response MUST end with a SINGLE \`\`\`json block containing the actions.
+4. If you create folders, use the CREATE_FOLDER action first.
+5. You MUST output valid JSON conforming to the following schema.
+6. NEVER output shorthand text commands like "CREATE_FOLDER name".
+7. To tag a note, use the ADD_TAGS action. Read the note's Content and generate 1-3 highly relevant, specific hashtags (e.g., #Shopping, #Ideas). Do NOT just use generic tags like #untagged.
+8. When asked to perform a bulk action (e.g., "tag all notes"), you MUST generate a separate action object in the JSON array for EVERY single matching note in the NOTE CONTEXT.
+
+JSON SCHEMA:
+\`\`\`json
+{
+  "actions": [
+    { "type": "CREATE_FOLDER", "name": "Folder Name", "color": "#HexCode" },
+    { "type": "MOVE_NOTE", "noteId": "actual_note_id", "folderId": "actual_folder_id" },
+    { "type": "ADD_TAGS", "noteId": "actual_note_id", "tags": ["#tag1", "#tag2"] }
+  ]
+}
+\`\`\`
 
 AVAILABLE FOLDERS: ${folderNames || "None"}.
 AVAILABLE ACTIONS:
 - {"type": "CREATE_NOTE", "title": "...", "content": "..."}
 - {"type": "MOVE_NOTE", "noteId": "...", "folderId": "..."}
 - {"type": "CREATE_FOLDER", "name": "...", "color": "..."}
-- {"type": "UPDATE_NOTE", "noteId": "...", "content": "Original content...<br/><br/>#tag1 #tag2"}
+- {"type": "UPDATE_NOTE", "noteId": "...", "title": "...", "content": "..."}
+- {"type": "ADD_TAGS", "noteId": "...", "tags": ["#..."]}
 
-NOTE CONTEXT:
+NOTE CONTEXT (Last 40 Notes):
 ${context}`;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
+      let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -762,9 +792,24 @@ ${context}`;
         })
       });
 
-      if (!response.ok) {
+      let aiText = "";
+
+      if (response.status === 429 && window.puter) {
+        const isAgentic = /organize|tag|move|create|delete|make|sort|folder|note/i.test(userMsg);
+
+        if (isAgentic) {
+          console.warn("Gemini 2.5 Flash Lite quota reached (HTTP 429). Falling back to Puter.js (Gemini 3 Flash for agentic task).");
+          const puterRes = await window.puter.ai.chat(`SYSTEM INSTRUCTION: ${systemPrompt}\n\nUSER MESSAGE: ${userMsg}`, { model: 'gemini-3-flash-preview' });
+          aiText = typeof puterRes === 'string' ? puterRes : (puterRes?.message?.content || puterRes?.text || puterRes.toString());
+        } else {
+          console.warn("Gemini 2.5 Flash Lite quota reached (HTTP 429). Falling back to Puter.js (Gemini 3 Flash).");
+          const gemmaPrompt = `INSTRUCTIONS: You are a helpful Workspace Assistant. Answer the user's question clearly and concisely using ONLY the provided NOTE CONTEXT. Do NOT generate any JSON action blocks.\n\nNOTE CONTEXT:\n${context}\n\nUSER QUESTION:\n${userMsg}\n\nANSWER:`;
+          const puterRes = await window.puter.ai.chat(gemmaPrompt, { model: 'gemini-3-flash-preview' });
+          aiText = typeof puterRes === 'string' ? puterRes : (puterRes?.message?.content || puterRes?.text || puterRes.toString());
+        }
+      } else if (!response.ok) {
         let errorMessage = "Error reaching AI.";
-        if (response.status === 429) errorMessage = "Rate limit exceeded. Please wait a moment before trying again.";
+        if (response.status === 429) errorMessage = "Rate limit exceeded, and Puter.js fallback is unavailable.";
         else if (response.status === 403) errorMessage = "Access forbidden. Please check if your API key is valid and your region is supported.";
         else {
           try {
@@ -776,21 +821,33 @@ ${context}`;
         }
         setChatHistory(prev => [...prev, { role: 'assistant', text: errorMessage }]);
         return;
+      } else {
+        const data = await response.json();
+        aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Gemini connection lost.";
       }
 
-      const data = await response.json();
-      let aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Gemini connection lost.";
-
       // Improved Action Processing
-      const jsonMatch = aiText.match(/```json\s*([\s\S]*?)\s*```/);
+      let rawJson = null;
+      let actionCount = 0;
+      let jsonMatch = aiText.match(/```json\s*([\s\S]*?)\s*```/);
+
       if (jsonMatch) {
+        rawJson = jsonMatch[1].trim();
+      } else {
+        const fallbackMatch = aiText.match(/(\{\s*"actions"\s*:[\s\S]*\}|\[\s*\{\s*"type"\s*:[\s\S]*\}\s*\])/);
+        if (fallbackMatch) {
+          rawJson = fallbackMatch[0].trim();
+          jsonMatch = fallbackMatch;
+        }
+      }
+
+      if (rawJson) {
         try {
-          const rawJson = jsonMatch[1].trim();
           const parsed = JSON.parse(rawJson);
           const actions = Array.isArray(parsed) ? parsed : (parsed.actions || []);
 
-          let actionCount = 0;
           let tempNotes = null;
+
           let tempFolders = null;
 
           actions.forEach(action => {
@@ -835,6 +892,17 @@ ${context}`;
                 actionCount++;
               }
             }
+            if (action.type === 'ADD_TAGS' && action.noteId && Array.isArray(action.tags)) {
+              if (!tempNotes) tempNotes = [...notes];
+              const targetIdx = tempNotes.findIndex(n => n.id === action.noteId);
+              if (targetIdx !== -1) {
+                const existingTags = tempNotes[targetIdx].tags || [];
+                // Combine existing and new tags, ensuring uniqueness and formatting
+                const newTags = action.tags.map(t => t.startsWith('#') ? t : `#${t}`);
+                tempNotes[targetIdx].tags = [...new Set([...existingTags, ...newTags])];
+                actionCount++;
+              }
+            }
           });
 
           if (tempNotes) setNotes(tempNotes);
@@ -844,9 +912,14 @@ ${context}`;
             setTimeout(() => setCopyStatus(null), 3000);
           }
           aiText = aiText.replace(jsonMatch[0], '').trim();
+          if (aiText === '') {
+            aiText = actionCount > 0 ? "I've updated your workspace as requested." : "I didn't find any specific changes to make based on your request.";
+          }
         } catch (err) { console.error("Agent Error:", err); }
       }
-      setChatHistory(prev => [...prev, { role: 'assistant', text: aiText || "Tasks complete!" }]);
+
+      const cleanAiText = (aiText || "I failed to process that request.").replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+      setChatHistory(prev => [...prev, { role: 'assistant', text: cleanAiText }]);
     } catch {
       setChatHistory(prev => [...prev, { role: 'assistant', text: "Network error reaching AI." }]);
     } finally { setIsTyping(false); }
@@ -890,7 +963,7 @@ ${context}`;
                 {f.id !== 'default' && (
                   <button
                     onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete folder "${f.name}"? Notes will be moved to General.`)) deleteFolder(f.id); }}
-                    className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 rounded-lg transition-all"
+                    className="p-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 rounded-lg transition-all"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -902,7 +975,9 @@ ${context}`;
             <div className="flex flex-wrap gap-2 px-2">
               {Array.from(new Set(notes.flatMap(n => {
                 const plainText = n.content ? n.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ') : '';
-                return plainText.match(/#[a-zA-Z0-9_]+/g) || [];
+                const manual = plainText.match(/#[a-zA-Z0-9_]+/g) || [];
+                const ai = n.tags || [];
+                return [...manual, ...ai];
               }))).map(tag => (
                 <span key={tag} onClick={() => { setSearchQuery(tag); setViewMode('grid'); setIsSidebarOpen(false); }} className={`text-[10px] font-bold px-2 py-1 rounded-full cursor-pointer transition-all ${searchQuery === tag ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : (darkMode ? 'bg-zinc-800 text-zinc-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}`}>
                   {tag}
@@ -918,9 +993,9 @@ ${context}`;
 
       {/* Main Area */}
       <main className="flex-1 flex flex-col relative min-w-0 h-full overflow-hidden">
-        <header className={`h-20 border-b flex items-center px-6 gap-4 justify-between shrink-0 z-[60] ${darkMode ? 'bg-[#0a0a0a] border-zinc-800' : 'bg-white border-slate-100'}`}>
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            {!isSidebarOpen && <button onClick={() => setIsSidebarOpen(true)} className={`p-2 border rounded-lg transition-all hover:scale-105 active:scale-95 ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-50'}`}><PanelLeftOpen className="w-4 h-4" /></button>}
+        <header className={`h-16 sm:h-20 border-b flex items-center px-3 sm:px-6 gap-2 sm:gap-4 justify-between shrink-0 z-[60] ${darkMode ? 'bg-[#0a0a0a] border-zinc-800' : 'bg-white border-slate-100'}`}>
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+            {!isSidebarOpen && <button onClick={() => setIsSidebarOpen(true)} className={`p-1.5 sm:p-2 border rounded-lg transition-all hover:scale-105 active:scale-95 ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-50'}`}><PanelLeftOpen className="w-4 h-4 sm:w-5 sm:h-5" /></button>}
             <div className="flex-1 min-w-0">
               {viewMode === 'grid' || viewMode === 'tasks' ? (
                 <div className="relative flex-1 max-w-xs sm:max-w-md">
@@ -938,9 +1013,9 @@ ${context}`;
 
           <div className="flex items-center gap-2 shrink-0">
             {(viewMode === 'grid' || viewMode === 'tasks') && (
-              <div className="flex items-center gap-2 relative">
-                <div className={`flex items-center gap-1.5 transition-all duration-300 ${isSelectMode ? 'w-auto opacity-100' : 'w-0 opacity-0 overflow-hidden'}`}>
-                  <button onClick={selectAllVisible} className={`px-3 py-2 rounded-xl text-xs font-bold border ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Select All</button>
+              <div className="flex items-center gap-1 sm:gap-2 relative">
+                <div className={`flex items-center gap-1 sm:gap-1.5 transition-all duration-300 ${isSelectMode ? 'w-auto opacity-100' : 'w-0 opacity-0 overflow-hidden'}`}>
+                  <button onClick={selectAllVisible} className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold border ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}><span className="hidden sm:inline">Select All</span><span className="sm:hidden">All</span></button>
 
                   {selectedNoteIds.length > 0 && (
                     <div className="flex items-center gap-1.5" ref={dropdownRef}>
@@ -997,7 +1072,7 @@ ${context}`;
 
                 <button
                   onClick={() => { setIsSelectMode(!isSelectMode); setSelectedNoteIds([]); setActiveDropdown(null); }}
-                  className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold border transition-all ${isSelectMode ? 'bg-zinc-700 text-white border-zinc-600' : (darkMode ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-400' : 'border-slate-200 hover:bg-slate-100 text-slate-500')}`}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold border transition-all ${isSelectMode ? 'bg-zinc-700 text-white border-zinc-600' : (darkMode ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-400' : 'border-slate-200 hover:bg-slate-100 text-slate-500')}`}
                 >
                   {isSelectMode ? <X className="w-3.5 h-3.5" /> : <ListChecks className="w-3.5 h-3.5" />}
                   <span className="hidden sm:inline">{isSelectMode ? 'Cancel' : 'Manage'}</span>
@@ -1006,29 +1081,29 @@ ${context}`;
             )}
 
             {viewMode === 'editor' && (
-              <div className="flex items-center gap-1 sm:gap-1.5 mr-1 sm:mr-2">
+              <div className="flex items-center gap-0.5 sm:gap-1.5 mr-0 sm:mr-2">
                 <button
                   onClick={() => setNotes(notes.map(n => n.id === activeNoteId ? { ...n, isPinned: !n.isPinned } : n))}
-                  className={`p-2.5 rounded-xl transition-all ${activeNote?.isPinned ? 'text-amber-500 hover:bg-amber-500/10' : (darkMode ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800')}`}
+                  className={`p-1.5 sm:p-2.5 rounded-xl transition-all ${activeNote?.isPinned ? 'text-amber-500 hover:bg-amber-500/10' : (darkMode ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800')}`}
                 >
-                  {activeNote?.isPinned ? <PinOff className="w-5 h-5" /> : <Pin className="w-5 h-5" />}
+                  {activeNote?.isPinned ? <PinOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Pin className="w-4 h-4 sm:w-5 sm:h-5" />}
                 </button>
                 <button
                   onClick={() => {
                     setIsAiOpen(true);
                     setChatInput(`Could you summarize my current note titled "${activeNote?.title || 'Untitled'}"?`);
                   }}
-                  className={`p-2.5 rounded-xl transition-all ${darkMode ? 'hover:bg-zinc-800 text-indigo-400 hover:text-indigo-300' : 'hover:bg-indigo-50 text-indigo-600'}`}
+                  className={`p-1.5 sm:p-2.5 rounded-xl transition-all hidden sm:flex ${darkMode ? 'hover:bg-zinc-800 text-indigo-400 hover:text-indigo-300' : 'hover:bg-indigo-50 text-indigo-600'}`}
                 >
-                  <MessageSquare className="w-5 h-5" />
+                  <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
-                <div className="w-px h-6 mx-1 bg-zinc-800/20 dark:bg-zinc-200/20" />
+                <div className="w-px h-5 sm:h-6 mx-0.5 sm:mx-1 bg-zinc-800/20 dark:bg-zinc-200/20" />
                 <div className="relative">
                   <button
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveDropdown(activeDropdown === 'shareEditor' ? null : 'shareEditor'); }}
-                    className={`p-2.5 rounded-xl transition-all ${darkMode ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800'}`}
+                    className={`p-1.5 sm:p-2.5 rounded-xl transition-all ${darkMode ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800'}`}
                   >
-                    <Share2 className="w-5 h-5" />
+                    <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                   {activeDropdown === 'shareEditor' && (
                     <div className={`absolute top-full right-0 mt-2 w-56 rounded-2xl border shadow-2xl py-2 z-[9999] animate-dropdown ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'}`}>
@@ -1050,17 +1125,17 @@ ${context}`;
                     </div>
                   )}
                 </div>
-                <button onClick={() => deleteNotes([activeNoteId])} className="p-2.5 rounded-xl transition-all text-red-500/70 hover:bg-red-500/10 hover:text-red-500">
-                  <Trash2 className="w-5 h-5" />
+                <button onClick={() => deleteNotes([activeNoteId])} className="p-1.5 sm:p-2.5 rounded-xl transition-all text-red-500/70 hover:bg-red-500/10 hover:text-red-500">
+                  <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
               </div>
             )}
 
-            <button onClick={addNote} className="bg-indigo-600 text-white p-2.5 sm:px-4 sm:py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 active:scale-95 transition-all ml-1 sm:ml-2 shrink-0">
+            <button onClick={addNote} className="bg-indigo-600 text-white p-2 sm:px-4 sm:py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 active:scale-95 transition-all ml-1 sm:ml-2 shrink-0">
               <Plus className="w-4 h-4" /><span className="hidden sm:inline">New Note</span>
             </button>
-            <button onClick={() => setIsAiOpen(!isAiOpen)} className={`p-2.5 rounded-xl transition-all shrink-0 ${isAiOpen ? 'bg-indigo-600 text-white' : (darkMode ? 'bg-zinc-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600')}`}>
-              <Sparkles className="w-5 h-5" />
+            <button onClick={() => setIsAiOpen(!isAiOpen)} className={`p-2 sm:p-2.5 rounded-xl transition-all shrink-0 ${isAiOpen ? 'bg-indigo-600 text-white' : (darkMode ? 'bg-zinc-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600')}`}>
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </header>
@@ -1142,7 +1217,7 @@ ${context}`;
                       {!isSelectMode && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setNotes(notes.map(n => n.id === note.id ? { ...n, isPinned: !n.isPinned } : n)); }}
-                          className={`p-1.5 rounded-lg transition-all ${note.isPinned ? 'text-amber-500 opacity-100' : 'opacity-0 group-hover:opacity-100 ' + (darkMode ? 'hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-600')}`}
+                          className={`p-1.5 rounded-lg transition-all ${note.isPinned ? 'text-amber-500 opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 ' + (darkMode ? 'hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-600')}`}
                         >
                           <Pin className="w-4 h-4" />
                         </button>
@@ -1155,7 +1230,9 @@ ${context}`;
 
                     {(() => {
                       const plainText = note.content ? note.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ') : '';
-                      const tags = plainText ? (plainText.match(/#[a-zA-Z0-9_]+/g) || []).slice(0, 3) : [];
+                      const manual = plainText.match(/#[a-zA-Z0-9_]+/g) || [];
+                      const combined = [...new Set([...(note.tags || []), ...manual])];
+                      const tags = combined.slice(0, 3);
                       return tags.length > 0 && !isSelectMode ? (
                         <div className="flex items-center gap-1.5 mt-3 flex-wrap">
                           {tags.map((tag, tIndex) => (
@@ -1216,6 +1293,30 @@ ${context}`;
                     }} />
                   </label>
                 </div>
+                {(() => {
+                  const plainText = activeNote?.content ? activeNote.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ') : '';
+                  const manualTags = plainText.match(/#[a-zA-Z0-9_]+/g) || [];
+                  const aiTags = activeNote?.tags || [];
+                  const combinedTags = [...new Set([...manualTags, ...aiTags])];
+                  if (combinedTags.length === 0) return null;
+
+                  return (
+                    <div className={`flex flex-wrap items-center gap-2 px-1 pb-3 mb-2 border-b ${darkMode ? 'border-zinc-800/30' : 'border-slate-100'}`}>
+                      <Tag className={`w-3 h-3 ${darkMode ? 'text-zinc-500' : 'text-slate-400'}`} />
+                      {combinedTags.map((tag, tIndex) => (
+                        <span key={tIndex} className={`text-[11px] items-center flex gap-1 font-bold px-2.5 py-1 rounded-full border transition-colors ${darkMode ? 'bg-zinc-800/50 border-zinc-700 text-zinc-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                          {tag}
+                          {aiTags.includes(tag) && !manualTags.includes(tag) && (
+                            <button onClick={(e) => {
+                              e.stopPropagation();
+                              setNotes(notes.map(n => n.id === activeNoteId ? { ...n, tags: n.tags.filter(t => t !== tag) } : n));
+                            }} className="ml-1 opacity-50 hover:opacity-100 text-red-400 hover:text-red-500 rounded-full"><X className="w-3 h-3" /></button>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
                 <EditorBlock content={activeNote?.content || ''} onChange={content => setNotes(notes.map(n => n.id === activeNoteId ? { ...n, content } : n))} />
               </div>
             )}
@@ -1251,128 +1352,134 @@ ${context}`;
       </main>
 
       {/* Settings Modal */}
-      {showSettingsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-modal-in">
-          <div className={`border rounded-3xl p-5 sm:p-8 w-full max-w-lg py-8 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar transition-all ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
-            <div className="flex justify-between items-start mb-8"><h2 className="text-xl sm:text-2xl font-bold">Workspace Settings</h2><button onClick={() => setShowSettingsModal(false)}><X className="w-5 h-5" /></button></div>
-            <div className="space-y-6">
-              <div className="flex items-center justify-between p-4 rounded-2xl border border-zinc-800/50">
-                <span className="text-sm font-bold">Dark Theme</span>
-                <button onClick={() => setDarkMode(!darkMode)} className={`w-12 h-6 rounded-full relative transition-all duration-300 ${darkMode ? 'bg-indigo-600' : 'bg-slate-300'}`}>
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-md ${darkMode ? 'left-7' : 'left-1'}`} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between p-4 rounded-2xl border border-zinc-800/50">
-                <div className="flex flex-col">
-                  <span className="text-sm font-bold">Daily Auto-Backup</span>
-                  <span className="text-xs opacity-50 mt-1">Saves a daily local snapshot</span>
+      {
+        showSettingsModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-modal-in">
+            <div className={`border rounded-3xl p-5 sm:p-8 w-full max-w-lg py-8 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar transition-all ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+              <div className="flex justify-between items-start mb-8"><h2 className="text-xl sm:text-2xl font-bold">Workspace Settings</h2><button onClick={() => setShowSettingsModal(false)}><X className="w-5 h-5" /></button></div>
+              <div className="space-y-6">
+                <div className="flex items-center justify-between p-4 rounded-2xl border border-zinc-800/50">
+                  <span className="text-sm font-bold">Dark Theme</span>
+                  <button onClick={() => setDarkMode(!darkMode)} className={`w-12 h-6 rounded-full relative transition-all duration-300 ${darkMode ? 'bg-indigo-600' : 'bg-slate-300'}`}>
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-md ${darkMode ? 'left-7' : 'left-1'}`} />
+                  </button>
                 </div>
-                <button onClick={() => setAutoBackup(!autoBackup)} className={`w-12 h-6 rounded-full relative transition-all duration-300 ${autoBackup ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-md ${autoBackup ? 'left-7' : 'left-1'}`} />
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-4 pt-4">
-                <button onClick={() => handleBackup('json')} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Export JSON</button>
-                <button onClick={() => fileInputRef.current.click()} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Import JSON</button>
+                <div className="flex items-center justify-between p-4 rounded-2xl border border-zinc-800/50">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold">Daily Auto-Backup</span>
+                    <span className="text-xs opacity-50 mt-1">Saves a daily local snapshot</span>
+                  </div>
+                  <button onClick={() => setAutoBackup(!autoBackup)} className={`w-12 h-6 rounded-full relative transition-all duration-300 ${autoBackup ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-md ${autoBackup ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-4 pt-4">
+                  <button onClick={() => handleBackup('json')} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Export JSON</button>
+                  <button onClick={() => fileInputRef.current.click()} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Import JSON</button>
 
-                <div className="col-span-2 mt-4">
-                  <div className={`p-5 rounded-2xl border ${darkMode ? 'border-zinc-800 bg-zinc-800/20' : 'border-slate-200 bg-slate-50'} flex flex-col gap-4`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className={`p-2 rounded-lg ${googleDriveConnected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'}`}><Cloud className="w-4 h-4" /></div>
-                        <div>
-                          <h3 className="text-sm font-bold">Google Drive Sync</h3>
-                          <p className={`text-xs ${googleDriveConnected ? 'text-emerald-500' : 'opacity-50'}`}>{googleDriveConnected ? 'Connected & Auto-Syncing Hourly' : 'Not Connected'}</p>
+                  <div className="col-span-2 mt-4">
+                    <div className={`p-5 rounded-2xl border ${darkMode ? 'border-zinc-800 bg-zinc-800/20' : 'border-slate-200 bg-slate-50'} flex flex-col gap-4`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className={`p-2 rounded-lg ${googleDriveConnected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'}`}><Cloud className="w-4 h-4" /></div>
+                          <div>
+                            <h3 className="text-sm font-bold">Google Drive Sync</h3>
+                            <p className={`text-xs ${googleDriveConnected ? 'text-emerald-500' : 'opacity-50'}`}>{googleDriveConnected ? 'Connected & Auto-Syncing Hourly' : 'Not Connected'}</p>
+                          </div>
                         </div>
+                        {googleDriveConnected && (
+                          <button
+                            onClick={() => {
+                              setGoogleDriveConnected(false);
+                              setDriveToken(null);
+                              localStorage.removeItem('smart-gdrive-last-sync-time');
+                              localStorage.removeItem('smart-gdrive-token');
+                              setCopyStatus('Disconnected from Drive');
+                              setTimeout(() => setCopyStatus(null), 3000);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${darkMode ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                          >
+                            Disconnect
+                          </button>
+                        )}
                       </div>
-                      {googleDriveConnected && (
-                        <button
-                          onClick={() => {
-                            setGoogleDriveConnected(false);
-                            setDriveToken(null);
-                            localStorage.removeItem('smart-gdrive-last-sync-time');
-                            localStorage.removeItem('smart-gdrive-token');
-                            setCopyStatus('Disconnected from Drive');
-                            setTimeout(() => setCopyStatus(null), 3000);
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${darkMode ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
-                        >
-                          Disconnect
-                        </button>
-                      )}
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <button onClick={handleDriveSync} disabled={isBackingUp || isRestoring} className="py-2.5 px-4 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-500 flex items-center justify-center gap-2 shadow-sm transition-all shadow-blue-500/20 disabled:opacity-50">
-                        {isBackingUp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Backup Now
-                      </button>
-                      <button onClick={handleDriveRestore} disabled={isBackingUp || isRestoring} className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 ${darkMode ? 'bg-zinc-800 hover:bg-zinc-700' : 'bg-white border border-slate-200 hover:bg-slate-50'}`}>
-                        {isRestoring ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <DownloadCloud className="w-3.5 h-3.5" />} Restore Backup
-                      </button>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button onClick={handleDriveSync} disabled={isBackingUp || isRestoring} className="py-2.5 px-4 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-500 flex items-center justify-center gap-2 shadow-sm transition-all shadow-blue-500/20 disabled:opacity-50">
+                          {isBackingUp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Backup Now
+                        </button>
+                        <button onClick={handleDriveRestore} disabled={isBackingUp || isRestoring} className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 ${darkMode ? 'bg-zinc-800 hover:bg-zinc-700' : 'bg-white border border-slate-200 hover:bg-slate-50'}`}>
+                          {isRestoring ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <DownloadCloud className="w-3.5 h-3.5" />} Restore Backup
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {localStorage.getItem('smart-daily-backup-v6') && (
-                  <button onClick={() => {
-                    if (window.confirm("Restore yesterday's snapshot? This will overwrite your current notes!")) {
-                      try {
-                        const snap = JSON.parse(localStorage.getItem('smart-daily-backup-v6'));
-                        if (snap.notes) setNotes(snap.notes);
-                        if (snap.folders) setFolders(snap.folders);
-                        setCopyStatus('Snapshot Restored!');
-                        setTimeout(() => setCopyStatus(null), 2000);
-                        setShowSettingsModal(false);
-                      } catch (e) { alert("Failed to restore snapshot."); }
-                    }
-                  }} className="col-span-2 p-4 border border-emerald-500/30 text-emerald-500 rounded-2xl text-xs font-bold hover:bg-emerald-500/10">Restore Daily Snapshot</button>
-                )}
+                  {localStorage.getItem('smart-daily-backup-v6') && (
+                    <button onClick={() => {
+                      if (window.confirm("Restore yesterday's snapshot? This will overwrite your current notes!")) {
+                        try {
+                          const snap = JSON.parse(localStorage.getItem('smart-daily-backup-v6'));
+                          if (snap.notes) setNotes(snap.notes);
+                          if (snap.folders) setFolders(snap.folders);
+                          setCopyStatus('Snapshot Restored!');
+                          setTimeout(() => setCopyStatus(null), 2000);
+                          setShowSettingsModal(false);
+                        } catch (e) { alert("Failed to restore snapshot."); }
+                      }
+                    }} className="col-span-2 p-4 border border-emerald-500/30 text-emerald-500 rounded-2xl text-xs font-bold hover:bg-emerald-500/10">Restore Daily Snapshot</button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Folder Modal */}
-      {showFolderModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-modal-in">
-          <div className={`border rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-2xl ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
-            <h2 className="text-xl font-bold mb-6">New Folder</h2>
-            <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)} className="w-full border rounded-xl py-3 px-4 outline-none mb-6 bg-transparent focus:border-indigo-500 transition-colors" placeholder="Category Name..." />
-            <div className="flex gap-2">
-              <button onClick={() => { if (newFolderName.trim()) { setFolders([...folders, { id: Date.now().toString(), name: newFolderName, color: `hsl(${Math.random() * 360}, 70%, 60%)` }]); setShowFolderModal(false); setNewFolderName(''); } }} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-500 transition-colors">Create</button>
-              <button onClick={() => setShowFolderModal(false)} className="px-6 opacity-50 font-bold text-sm">Cancel</button>
+      {
+        showFolderModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-modal-in">
+            <div className={`border rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-2xl ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+              <h2 className="text-xl font-bold mb-6">New Folder</h2>
+              <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)} className="w-full border rounded-xl py-3 px-4 outline-none mb-6 bg-transparent focus:border-indigo-500 transition-colors" placeholder="Category Name..." />
+              <div className="flex gap-2">
+                <button onClick={() => { if (newFolderName.trim()) { setFolders([...folders, { id: Date.now().toString(), name: newFolderName, color: `hsl(${Math.random() * 360}, 70%, 60%)` }]); setShowFolderModal(false); setNewFolderName(''); } }} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-500 transition-colors">Create</button>
+                <button onClick={() => setShowFolderModal(false)} className="px-6 opacity-50 font-bold text-sm">Cancel</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Restore Prompt Modal */}
-      {restorePromptData && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-modal-in">
-          <div className={`border rounded-3xl p-8 w-full max-w-md shadow-2xl flex flex-col items-center text-center ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
-            <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mb-6">
-              <DownloadCloud className="w-8 h-8 text-blue-500" />
+      {
+        restorePromptData && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-modal-in">
+            <div className={`border rounded-3xl p-8 w-full max-w-md shadow-2xl flex flex-col items-center text-center ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+              <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mb-6">
+                <DownloadCloud className="w-8 h-8 text-blue-500" />
+              </div>
+              <h2 className="text-xl font-bold mb-2">Google Drive Backup Found</h2>
+              <p className={`text-sm mb-8 ${darkMode ? 'text-zinc-400' : 'text-slate-500'}`}>We found a backup from <b>{restorePromptData.fileDate}</b>. How would you like to restore this data?</p>
+
+              <div className="w-full space-y-3">
+                <button onClick={() => handleRestoreChoice('merge')} className="w-full py-4 px-6 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/25 flex flex-col items-center">
+                  <span>Merge Backup</span>
+                  <span className="text-[10px] font-normal opacity-80 mt-1">Keeps your current notes but adds anything missing</span>
+                </button>
+
+                <button onClick={() => handleRestoreChoice('overwrite')} className={`w-full py-4 px-6 rounded-2xl font-bold transition-all flex flex-col items-center border ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-50'}`}>
+                  <span className="text-red-500">Clean Slate Overwrite</span>
+                  <span className="text-[10px] font-normal opacity-60 mt-1 line-clamp-1">Deletes your current workspace and loads the backup entirely</span>
+                </button>
+              </div>
+
+              <button onClick={() => setRestorePromptData(null)} className="mt-6 text-xs font-bold opacity-50 hover:opacity-100 transition-opacity uppercase tracking-widest">Cancel</button>
             </div>
-            <h2 className="text-xl font-bold mb-2">Google Drive Backup Found</h2>
-            <p className={`text-sm mb-8 ${darkMode ? 'text-zinc-400' : 'text-slate-500'}`}>We found a backup from <b>{restorePromptData.fileDate}</b>. How would you like to restore this data?</p>
-
-            <div className="w-full space-y-3">
-              <button onClick={() => handleRestoreChoice('merge')} className="w-full py-4 px-6 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/25 flex flex-col items-center">
-                <span>Merge Backup</span>
-                <span className="text-[10px] font-normal opacity-80 mt-1">Keeps your current notes but adds anything missing</span>
-              </button>
-
-              <button onClick={() => handleRestoreChoice('overwrite')} className={`w-full py-4 px-6 rounded-2xl font-bold transition-all flex flex-col items-center border ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-50'}`}>
-                <span className="text-red-500">Clean Slate Overwrite</span>
-                <span className="text-[10px] font-normal opacity-60 mt-1 line-clamp-1">Deletes your current workspace and loads the backup entirely</span>
-              </button>
-            </div>
-
-            <button onClick={() => setRestorePromptData(null)} className="mt-6 text-xs font-bold opacity-50 hover:opacity-100 transition-opacity uppercase tracking-widest">Cancel</button>
           </div>
-        </div>
-      )}
+        )
+      }
 
       <style>{`
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1411,6 +1518,6 @@ ${context}`;
         .custom-preview-grid ul, .custom-preview-grid ol { list-style-position: inside; padding-left: 0.5rem; margin: 0.2rem 0; }
         .custom-preview-grid img { display: none; }
       `}</style>
-    </div>
+    </div >
   );
 }
