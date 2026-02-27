@@ -401,6 +401,15 @@ export default function App() {
     }
   };
 
+  const deleteFolder = (folderId) => {
+    if (folderId === 'default') return;
+    setNotes(prev => prev.map(n => n.folderId === folderId ? { ...n, folderId: 'default' } : n));
+    setFolders(prev => prev.filter(f => f.id !== folderId));
+    if (activeFolderId === folderId) setActiveFolderId('all');
+    setCopyStatus('Folder deleted (Notes moved to General)');
+    setTimeout(() => setCopyStatus(null), 2000);
+  };
+
   const getFilteredNotes = () => {
     return notes.filter(n => {
       const matchesFolder = activeFolderId === 'all' || n.folderId === activeFolderId;
@@ -731,14 +740,14 @@ CRITICAL DIRECTIVES:
 1. NEVER ASK QUESTIONS. If you need more info to tag or organize a note, MAKE AN INTELLIGENT GUESS based on its content.
 2. DO NOT explain your reasoning; just perform the requested actions.
 3. ALWAYS encapsulate your commands in a SINGLE \`\`\`json block at the end of your response.
-4. If asked to tag notes, rewrite the content of untagged notes to include them using UPDATE_NOTE.
+4. If asked to tag notes, rewrite the content using UPDATE_NOTE. Put hashtags on a BRAND NEW LINE at the very end of the content.
 
 AVAILABLE FOLDERS: ${folderNames || "None"}.
 AVAILABLE ACTIONS:
 - {"type": "CREATE_NOTE", "title": "...", "content": "..."}
 - {"type": "MOVE_NOTE", "noteId": "...", "folderId": "..."}
 - {"type": "CREATE_FOLDER", "name": "...", "color": "..."}
-- {"type": "UPDATE_NOTE", "noteId": "...", "content": "Updated content WITH #tags"}
+- {"type": "UPDATE_NOTE", "noteId": "...", "content": "Original content...<br/><br/>#tag1 #tag2"}
 
 NOTE CONTEXT:
 ${context}`;
@@ -876,7 +885,16 @@ ${context}`;
             <div className="pt-6 pb-2 px-2 flex items-center justify-between opacity-50 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Folders<Plus className="w-3 h-3 cursor-pointer hover:text-indigo-500 transition-colors" onClick={() => setShowFolderModal(true)} /></div>
             {folders.map(f => (
               <div key={f.id} onClick={() => { setActiveFolderId(f.id); setViewMode('grid'); }} className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm cursor-pointer transition-all whitespace-nowrap group ${activeFolderId === f.id ? 'bg-zinc-800 text-white translate-x-1' : (darkMode ? 'hover:bg-zinc-800/50 text-zinc-400' : 'hover:bg-slate-100 text-slate-500')}`}>
-                <Folder className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" style={{ color: f.color }} /><span className="truncate flex-1">{f.name}</span>
+                <Folder className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" style={{ color: f.color }} />
+                <span className="truncate flex-1">{f.name}</span>
+                {f.id !== 'default' && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete folder "${f.name}"? Notes will be moved to General.`)) deleteFolder(f.id); }}
+                    className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 rounded-lg transition-all"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             ))}
 
@@ -905,9 +923,9 @@ ${context}`;
             {!isSidebarOpen && <button onClick={() => setIsSidebarOpen(true)} className={`p-2 border rounded-lg transition-all hover:scale-105 active:scale-95 ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-50'}`}><PanelLeftOpen className="w-4 h-4" /></button>}
             <div className="flex-1 min-w-0">
               {viewMode === 'grid' || viewMode === 'tasks' ? (
-                <div className="relative flex-1 max-w-md">
+                <div className="relative flex-1 max-w-xs sm:max-w-md">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-30" />
-                  <input type="text" placeholder="Search notes..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className={`w-full bg-transparent border rounded-xl py-2 pl-10 pr-4 text-sm outline-none transition-all ${darkMode ? 'border-zinc-800 focus:border-indigo-500' : 'border-slate-200 focus:border-indigo-400'}`} />
+                  <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className={`w-full bg-transparent border rounded-xl py-2 pl-10 pr-4 text-sm outline-none transition-all ${darkMode ? 'border-zinc-800 focus:border-indigo-500' : 'border-slate-200 focus:border-indigo-400'}`} />
                 </div>
               ) : (
                 <div className="flex items-center gap-3 overflow-hidden">
@@ -979,10 +997,10 @@ ${context}`;
 
                 <button
                   onClick={() => { setIsSelectMode(!isSelectMode); setSelectedNoteIds([]); setActiveDropdown(null); }}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all ${isSelectMode ? 'bg-zinc-700 text-white border-zinc-600' : (darkMode ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-400' : 'border-slate-200 hover:bg-slate-100 text-slate-500')}`}
+                  className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold border transition-all ${isSelectMode ? 'bg-zinc-700 text-white border-zinc-600' : (darkMode ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-400' : 'border-slate-200 hover:bg-slate-100 text-slate-500')}`}
                 >
                   {isSelectMode ? <X className="w-3.5 h-3.5" /> : <ListChecks className="w-3.5 h-3.5" />}
-                  {isSelectMode ? 'Cancel' : 'Manage'}
+                  <span className="hidden sm:inline">{isSelectMode ? 'Cancel' : 'Manage'}</span>
                 </button>
               </div>
             )}
@@ -1209,7 +1227,7 @@ ${context}`;
           )}
 
           {/* AI Sidebar */}
-          <aside className={`fixed sm:relative right-0 top-0 bottom-0 transition-all duration-300 w-[85vw] max-w-[380px] ${isAiOpen ? 'sm:w-96 translate-x-0 border-l shadow-2xl sm:shadow-none' : 'sm:w-0 translate-x-full sm:translate-x-0 sm:border-l-0 opacity-0 sm:opacity-100'} ${darkMode ? 'border-zinc-800/20 bg-zinc-900/95 sm:bg-zinc-900/30' : 'border-slate-200/50 bg-white sm:bg-white/90'} overflow-hidden flex flex-col backdrop-blur-md shrink-0 z-[110]`}>
+          <aside className={`fixed sm:relative right-0 top-0 bottom-0 transition-all duration-300 w-[85vw] max-w-[380px] ${isAiOpen ? 'sm:w-96 translate-x-0 border-l shadow-2xl sm:shadow-none' : 'translate-x-full sm:translate-x-0 sm:w-0 sm:border-l-0 opacity-0 sm:opacity-100'} ${darkMode ? 'border-zinc-800/20 bg-zinc-900/95 sm:bg-zinc-900/30' : 'border-slate-200/50 bg-white sm:bg-white/90'} overflow-hidden flex flex-col backdrop-blur-md shrink-0 z-[110]`}>
             <div className={`p-4 sm:p-6 border-b flex items-center justify-between h-20 shrink-0 ${darkMode ? 'border-zinc-800/20' : 'border-slate-200/50'}`}>
               <div className={`flex items-center gap-2 font-bold text-xs tracking-widest uppercase ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}><Sparkles className="w-4 h-4 animate-pulse" /> AI Assistant</div>
               <button className={`transition-colors ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-slate-400 hover:text-slate-800'}`} onClick={() => setIsAiOpen(false)}><X className="w-4 h-4" /></button>
