@@ -1,5 +1,7 @@
 # SmartNotes AI
 
+**[🔴 Live Demo: ultnote.netlify.app](https://ultnote.netlify.app)**
+
 SmartNotes AI is a modern, privacy-first, fully responsive web application that supercharges your note-taking via rich text formatting, local offline storage, and an integrated Google Gemini AI assistant. 
 
 ![SmartNotes UI](./public/favicon.svg)
