@@ -759,13 +759,14 @@ CRITICAL DIRECTIVES:
 6. NEVER output shorthand text commands like "CREATE_FOLDER name".
 7. To tag a note, use the ADD_TAGS action. Read the note's Content and generate 1-3 highly relevant, specific hashtags (e.g., #Shopping, #Ideas). Do NOT just use generic tags like #untagged.
 8. When asked to perform a bulk action (e.g., "tag all notes"), you MUST generate a separate action object in the JSON array for EVERY single matching note in the NOTE CONTEXT.
+9. If you create a new folder and immediately want to move notes into it, provide a "folderName" in the MOVE_NOTE action instead of a "folderId", because you do not know the real folderId yet!
 
 JSON SCHEMA:
 \`\`\`json
 {
   "actions": [
-    { "type": "CREATE_FOLDER", "name": "Folder Name", "color": "#HexCode" },
-    { "type": "MOVE_NOTE", "noteId": "actual_note_id", "folderId": "actual_folder_id" },
+    { "type": "CREATE_FOLDER", "name": "Work", "color": "#HexCode" },
+    { "type": "MOVE_NOTE", "noteId": "actual_note_id", "folderName": "Work" },
     { "type": "ADD_TAGS", "noteId": "actual_note_id", "tags": ["#tag1", "#tag2"] }
   ]
 }
@@ -774,7 +775,7 @@ JSON SCHEMA:
 AVAILABLE FOLDERS: ${folderNames || "None"}.
 AVAILABLE ACTIONS:
 - {"type": "CREATE_NOTE", "title": "...", "content": "..."}
-- {"type": "MOVE_NOTE", "noteId": "...", "folderId": "..."}
+- {"type": "MOVE_NOTE", "noteId": "...", "folderId": "..."} OR {"type": "MOVE_NOTE", "noteId": "...", "folderName": "..."}
 - {"type": "CREATE_FOLDER", "name": "...", "color": "..."}
 - {"type": "UPDATE_NOTE", "noteId": "...", "title": "...", "content": "..."}
 - {"type": "ADD_TAGS", "noteId": "...", "tags": ["#..."]}
@@ -875,12 +876,20 @@ ${context}`;
               setNotes(prev => [newNote, ...prev]);
               actionCount++;
             }
-            if (action.type === 'MOVE_NOTE' && action.noteId && action.folderId) {
+            if (action.type === 'MOVE_NOTE' && action.noteId && (action.folderId || action.folderName)) {
               if (!tempNotes) tempNotes = [...notes];
               const targetIdx = tempNotes.findIndex(n => n.id === action.noteId);
               if (targetIdx !== -1) {
-                tempNotes[targetIdx] = { ...tempNotes[targetIdx], folderId: action.folderId };
-                actionCount++;
+                let targetFid = action.folderId;
+                if (!targetFid && action.folderName) {
+                  const arr = tempFolders || folders;
+                  const f = arr.find(f => f.name.toLowerCase() === action.folderName.toLowerCase());
+                  if (f) targetFid = f.id;
+                }
+                if (targetFid) {
+                  tempNotes[targetIdx] = { ...tempNotes[targetIdx], folderId: targetFid };
+                  actionCount++;
+                }
               }
             }
             if (action.type === 'UPDATE_NOTE' && action.noteId) {
