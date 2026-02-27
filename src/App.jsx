@@ -66,16 +66,43 @@ const EditorBlock = ({ content, onChange }) => {
   );
 };
 
+const defaultNoteContent = `
+  <h1>Welcome to SmartNotes AI ✨</h1>
+  <p>Your privacy-first, fully featured AI workspace. Here is everything you can do today:</p>
+  
+  <h2>📝 Rich Text Editing</h2>
+  <ul>
+    <li>Format text with <b>Bold</b>, <i>Italic</i>, or <u>Underline</u></li>
+    <li>Create beautiful Blockquotes for your most important ideas</li>
+    <li>Click the Image icon on your toolbar to embed photos and screenshots inline</li>
+    <li>Organize thoughts beautifully with bulleted and numbered lists</li>
+  </ul>
+  
+  <h2>🤖 Gemini AI Assistant</h2>
+  <p>Click the <b>Sparkles icon</b> in the top right to chat with your integrated Google Gemini AI. It has direct context of the notes you work on!</p>
+  
+  <h2>🛡️ Privacy Built-in</h2>
+  <p>All notes, folders, and settings remain <b>100% locally on your browser cache</b>.</p>
+  
+  <h2>💾 Auto-Backups & Sync</h2>
+  <ul>
+    <li><b>Daily Auto-Backup</b> is already ON! A local snapshot of your notes is saved daily automatically (check Settings to configure).</li>
+    <li>You can download or copy <code>.json</code> backups anytime to sync to your phone, or instantly share any single note as plain text!</li>
+  </ul>
+  
+  <blockquote>Tip: Drag and drop the note cards on your grid to easily reorganize them, or click the sidebar folders to color-code your life!</blockquote>
+`;
+
 export default function App() {
   // --- State Management ---
   const [notes, setNotes] = useState(() => {
     try {
       const saved = localStorage.getItem('smart-notes-v6');
       return saved ? JSON.parse(saved) : [
-        { id: '1', title: 'Welcome', content: 'This is your AI-powered workspace.', folderId: 'default', timestamp: Date.now() }
+        { id: '1', title: 'Welcome to SmartNotes AI', content: defaultNoteContent, folderId: 'default', timestamp: Date.now() }
       ];
     } catch (e) {
-      return [{ id: '1', title: 'Welcome', content: 'This is your AI-powered workspace.', folderId: 'default', timestamp: Date.now() }];
+      return [{ id: '1', title: 'Welcome to SmartNotes AI', content: defaultNoteContent, folderId: 'default', timestamp: Date.now() }];
     }
   });
 
@@ -99,9 +126,10 @@ export default function App() {
 
   const [autoBackup, setAutoBackup] = useState(() => {
     try {
-      return localStorage.getItem('smart-autobackup-v6') === 'true';
+      const stored = localStorage.getItem('smart-autobackup-v6');
+      return stored !== null ? stored === 'true' : true;
     } catch {
-      return false;
+      return true;
     }
   });
 
