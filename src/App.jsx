@@ -392,7 +392,7 @@ export default function App() {
             {!isSidebarOpen && <button onClick={() => setIsSidebarOpen(true)} className={`p-2 border rounded-lg transition-all hover:scale-105 active:scale-95 ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-50'}`}><PanelLeftOpen className="w-4 h-4" /></button>}
             <div className="flex-1 min-w-0">
               {viewMode === 'grid' ? (
-                <div className="relative flex-1 max-w-md hidden sm:block">
+                <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-30" />
                   <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className={`w-full bg-transparent border rounded-xl py-2 pl-10 pr-4 text-sm outline-none transition-all ${darkMode ? 'border-zinc-800 focus:border-indigo-500' : 'border-slate-200 focus:border-indigo-400'}`} />
                 </div>
