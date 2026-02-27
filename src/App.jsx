@@ -149,6 +149,25 @@ export default function App() {
     }
   });
 
+  const [driveToken, setDriveToken] = useState(() => {
+    try {
+      const stored = localStorage.getItem('smart-gdrive-token');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.expiresAt > Date.now()) return parsed.token;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  const saveDriveToken = (tokenResponse) => {
+    const expiresAt = Date.now() + (tokenResponse.expires_in * 1000) - 60000;
+    setDriveToken(tokenResponse.access_token);
+    localStorage.setItem('smart-gdrive-token', JSON.stringify({ token: tokenResponse.access_token, expiresAt }));
+  };
+
   const [viewMode, setViewMode] = useState('grid');
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [activeFolderId, setActiveFolderId] = useState('all');
@@ -169,7 +188,9 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [draggedIdx, setDraggedIdx] = useState(null);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restorePromptData, setRestorePromptData] = useState(null);
 
   const fileInputRef = useRef(null);
   const dropdownRef = useRef(null);
@@ -469,6 +490,47 @@ export default function App() {
   };
 
   const handleDriveSync = async () => {
+    const performUpload = async (accessToken) => {
+      setIsBackingUp(true);
+      try {
+        const fullData = { notes, folders, version: 'v6', timestamp: Date.now() };
+        const fileContent = JSON.stringify(fullData, null, 2);
+        const metadata = {
+          name: `SmartNotes_Backup_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`,
+          mimeType: 'application/json'
+        };
+
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: form
+        });
+
+        if (response.ok) {
+          setCopyStatus('Successfully backed up to Google Drive!');
+          setGoogleDriveConnected(true);
+          localStorage.setItem('smart-gdrive-last-sync-time', Date.now().toString());
+        } else {
+          setCopyStatus('Failed to upload to Google Drive.');
+        }
+      } catch (error) {
+        console.error(error);
+        setCopyStatus('Error syncing with Google Drive.');
+      } finally {
+        setIsBackingUp(false);
+        setTimeout(() => setCopyStatus(null), 3000);
+      }
+    };
+
+    if (driveToken && googleDriveConnected) {
+      await performUpload(driveToken);
+      return;
+    }
+
     const initGoogleSync = () => {
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'PLEASE_ADD_YOUR_CLIENT_ID';
 
@@ -481,43 +543,8 @@ export default function App() {
             setTimeout(() => setCopyStatus(null), 3000);
             return;
           }
-          const accessToken = tokenResponse.access_token;
-
-          setIsSyncing(true);
-          try {
-            const fullData = { notes, folders, version: 'v6', timestamp: Date.now() };
-            const fileContent = JSON.stringify(fullData, null, 2);
-            const metadata = {
-              name: `SmartNotes_Backup_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`,
-              mimeType: 'application/json'
-            };
-
-            const form = new FormData();
-            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-            form.append('file', new Blob([fileContent], { type: 'application/json' }));
-
-            const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${accessToken}`
-              },
-              body: form
-            });
-
-            if (response.ok) {
-              setCopyStatus('Successfully backed up to Google Drive!');
-              setGoogleDriveConnected(true);
-              localStorage.setItem('smart-gdrive-last-sync-time', Date.now().toString());
-            } else {
-              setCopyStatus('Failed to upload to Google Drive.');
-            }
-          } catch (error) {
-            console.error(error);
-            setCopyStatus('Error syncing with Google Drive.');
-          } finally {
-            setIsSyncing(false);
-            setTimeout(() => setCopyStatus(null), 3000);
-          }
+          saveDriveToken(tokenResponse);
+          await performUpload(tokenResponse.access_token);
         },
       });
       tokenClient.requestAccessToken({ prompt: 'consent' });
@@ -536,6 +563,54 @@ export default function App() {
   };
 
   const handleDriveRestore = async () => {
+    const performRestore = async (accessToken) => {
+      setIsRestoring(true);
+      try {
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name contains 'SmartNotes_' and mimeType='application/json'&orderBy=modifiedTime desc&pageSize=1&fields=files(id, name, modifiedTime)`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        if (!searchRes.ok) throw new Error("Failed to search Drive");
+
+        const searchData = await searchRes.json();
+
+        if (!searchData.files || searchData.files.length === 0) {
+          setCopyStatus('No SmartNotes backups found.');
+          setTimeout(() => setCopyStatus(null), 3000);
+          setIsRestoring(false);
+          return;
+        }
+
+        const latestFile = searchData.files[0];
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${latestFile.id}?alt=media`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        if (res.ok) {
+          const text = await res.text();
+          const parsed = JSON.parse(text);
+          if (parsed.notes && Array.isArray(parsed.notes)) {
+            const fileDate = new Date(latestFile.modifiedTime).toLocaleString();
+            setRestorePromptData({ parsed, fileDate });
+          } else {
+            setCopyStatus('Invalid backup file format');
+            setTimeout(() => setCopyStatus(null), 3000);
+          }
+        }
+      } catch (e) {
+        setCopyStatus('Failed to read Drive file');
+        setTimeout(() => setCopyStatus(null), 3000);
+      } finally {
+        setGoogleDriveConnected(true);
+        setIsRestoring(false);
+      }
+    };
+
+    if (driveToken && googleDriveConnected) {
+      await performRestore(driveToken);
+      return;
+    }
+
     const initGoogleDriveFetch = () => {
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'PLEASE_ADD_YOUR_CLIENT_ID';
 
@@ -548,83 +623,11 @@ export default function App() {
             setTimeout(() => setCopyStatus(null), 3000);
             return;
           }
-          const accessToken = tokenResponse.access_token;
-
-          setIsSyncing(true);
-          try {
-            // Find the most recent backup file automatically
-            const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name contains 'SmartNotes_' and mimeType='application/json'&orderBy=modifiedTime desc&pageSize=1&fields=files(id, name, modifiedTime)`, {
-              headers: { Authorization: `Bearer ${accessToken}` }
-            });
-
-            if (!searchRes.ok) throw new Error("Failed to search Drive");
-
-            const searchData = await searchRes.json();
-
-            if (!searchData.files || searchData.files.length === 0) {
-              setCopyStatus('No SmartNotes backups found.');
-              setTimeout(() => setCopyStatus(null), 3000);
-              setIsSyncing(false);
-              return;
-            }
-
-            const latestFile = searchData.files[0];
-            const fileId = latestFile.id;
-
-            const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-              headers: { Authorization: `Bearer ${accessToken}` }
-            });
-
-            if (res.ok) {
-              const text = await res.text();
-              const parsed = JSON.parse(text);
-              if (parsed.notes && Array.isArray(parsed.notes)) {
-
-                const fileDate = new Date(latestFile.modifiedTime).toLocaleString();
-                const userChoice = window.confirm(
-                  `Latest backup found!\nDate: ${fileDate}\n\nHow would you like to restore?\n\n` +
-                  "OK = 'Merge' (Keep your current newer notes and add missing ones from Drive).\n" +
-                  "Cancel = 'Clean Slate' (Completely overwrite everything with the Drive backup)."
-                );
-
-                if (userChoice) {
-                  setNotes(prev => {
-                    const existingIds = new Set(prev.map(n => n.id));
-                    const newNotes = parsed.notes.filter(n => !existingIds.has(n.id));
-                    return [...newNotes, ...prev];
-                  });
-
-                  if (parsed.folders) {
-                    setFolders(prev => {
-                      const existingIds = new Set(prev.map(f => f.id));
-                      const newFolders = parsed.folders.filter(f => !existingIds.has(f.id));
-                      return [...prev, ...newFolders];
-                    });
-                  }
-                  setCopyStatus('Merged safely with Google Drive backup!');
-                } else {
-                  setNotes(parsed.notes);
-                  if (parsed.folders) setFolders(parsed.folders);
-                  setCopyStatus('Clean Slate Restored!');
-                }
-
-                setTimeout(() => setCopyStatus(null), 3000);
-                setShowSettingsModal(false);
-              } else {
-                setCopyStatus('Invalid backup file format');
-                setTimeout(() => setCopyStatus(null), 3000);
-              }
-            }
-          } catch (e) {
-            setCopyStatus('Failed to read Drive file');
-            setTimeout(() => setCopyStatus(null), 3000);
-          } finally {
-            setGoogleDriveConnected(true);
-            setIsSyncing(false);
-          }
+          saveDriveToken(tokenResponse);
+          await performRestore(tokenResponse.access_token);
         }
       });
-      tokenClient.requestAccessToken({ prompt: '' }); // Try silent auth, falls back if needed
+      tokenClient.requestAccessToken({ prompt: '' });
     };
 
     if (!window.google?.accounts) {
@@ -637,6 +640,36 @@ export default function App() {
     } else {
       initGoogleDriveFetch();
     }
+  };
+
+  const handleRestoreChoice = (choice) => {
+    if (!restorePromptData) return;
+    const { parsed } = restorePromptData;
+
+    if (choice === 'merge') {
+      setNotes(prev => {
+        const existingIds = new Set(prev.map(n => n.id));
+        const newNotes = parsed.notes.filter(n => !existingIds.has(n.id));
+        return [...newNotes, ...prev];
+      });
+
+      if (parsed.folders) {
+        setFolders(prev => {
+          const existingIds = new Set(prev.map(f => f.id));
+          const newFolders = parsed.folders.filter(f => !existingIds.has(f.id));
+          return [...prev, ...newFolders];
+        });
+      }
+      setCopyStatus('Merged safely with Google Drive backup!');
+    } else {
+      setNotes(parsed.notes);
+      if (parsed.folders) setFolders(parsed.folders);
+      setCopyStatus('Clean Slate Restored!');
+    }
+
+    setRestorePromptData(null);
+    setShowSettingsModal(false);
+    setTimeout(() => setCopyStatus(null), 3000);
   };
 
   const handleAskAI = async (e) => {
@@ -1015,8 +1048,8 @@ export default function App() {
       {/* Settings Modal */}
       {showSettingsModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-modal-in">
-          <div className={`border rounded-3xl p-8 w-full max-w-lg shadow-2xl transition-all ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
-            <div className="flex justify-between items-start mb-8"><h2 className="text-2xl font-bold">Workspace Settings</h2><button onClick={() => setShowSettingsModal(false)}><X className="w-5 h-5" /></button></div>
+          <div className={`border rounded-3xl p-5 sm:p-8 w-full max-w-lg py-8 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar transition-all ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+            <div className="flex justify-between items-start mb-8"><h2 className="text-xl sm:text-2xl font-bold">Workspace Settings</h2><button onClick={() => setShowSettingsModal(false)}><X className="w-5 h-5" /></button></div>
             <div className="space-y-6">
               <div className="flex items-center justify-between p-4 rounded-2xl border border-zinc-800/50">
                 <span className="text-sm font-bold">Dark Theme</span>
@@ -1037,12 +1070,43 @@ export default function App() {
                 <button onClick={() => handleBackup('json')} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Export JSON</button>
                 <button onClick={() => fileInputRef.current.click()} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Import JSON</button>
 
-                <button onClick={handleDriveSync} disabled={isSyncing} className="p-4 border border-blue-500/30 text-blue-600 dark:text-blue-500 rounded-2xl text-xs font-bold hover:bg-blue-500/10 flex items-center justify-center gap-2">
-                  <Cloud className="w-4 h-4" /> Save to Google Drive
-                </button>
-                <button onClick={handleDriveRestore} disabled={isSyncing} className="p-4 border border-blue-500/30 text-blue-600 dark:text-blue-500 rounded-2xl text-xs font-bold hover:bg-blue-500/10 flex items-center justify-center gap-2">
-                  <DownloadCloud className="w-4 h-4" /> Restore with Picker
-                </button>
+                <div className="col-span-2 mt-4">
+                  <div className={`p-5 rounded-2xl border ${darkMode ? 'border-zinc-800 bg-zinc-800/20' : 'border-slate-200 bg-slate-50'} flex flex-col gap-4`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`p-2 rounded-lg ${googleDriveConnected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'}`}><Cloud className="w-4 h-4" /></div>
+                        <div>
+                          <h3 className="text-sm font-bold">Google Drive Sync</h3>
+                          <p className={`text-xs ${googleDriveConnected ? 'text-emerald-500' : 'opacity-50'}`}>{googleDriveConnected ? 'Connected & Auto-Syncing Hourly' : 'Not Connected'}</p>
+                        </div>
+                      </div>
+                      {googleDriveConnected && (
+                        <button
+                          onClick={() => {
+                            setGoogleDriveConnected(false);
+                            setDriveToken(null);
+                            localStorage.removeItem('smart-gdrive-last-sync-time');
+                            localStorage.removeItem('smart-gdrive-token');
+                            setCopyStatus('Disconnected from Drive');
+                            setTimeout(() => setCopyStatus(null), 3000);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${darkMode ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                        >
+                          Disconnect
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button onClick={handleDriveSync} disabled={isBackingUp || isRestoring} className="py-2.5 px-4 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-500 flex items-center justify-center gap-2 shadow-sm transition-all shadow-blue-500/20 disabled:opacity-50">
+                        {isBackingUp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Backup Now
+                      </button>
+                      <button onClick={handleDriveRestore} disabled={isBackingUp || isRestoring} className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 ${darkMode ? 'bg-zinc-800 hover:bg-zinc-700' : 'bg-white border border-slate-200 hover:bg-slate-50'}`}>
+                        {isRestoring ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <DownloadCloud className="w-3.5 h-3.5" />} Restore Backup
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
                 {localStorage.getItem('smart-daily-backup-v6') && (
                   <button onClick={() => {
@@ -1067,13 +1131,40 @@ export default function App() {
       {/* Folder Modal */}
       {showFolderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-modal-in">
-          <div className={`border rounded-3xl p-8 w-full max-w-sm shadow-2xl ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+          <div className={`border rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-2xl ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
             <h2 className="text-xl font-bold mb-6">New Folder</h2>
             <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)} className="w-full border rounded-xl py-3 px-4 outline-none mb-6 bg-transparent focus:border-indigo-500 transition-colors" placeholder="Category Name..." />
             <div className="flex gap-2">
               <button onClick={() => { if (newFolderName.trim()) { setFolders([...folders, { id: Date.now().toString(), name: newFolderName, color: `hsl(${Math.random() * 360}, 70%, 60%)` }]); setShowFolderModal(false); setNewFolderName(''); } }} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-500 transition-colors">Create</button>
               <button onClick={() => setShowFolderModal(false)} className="px-6 opacity-50 font-bold text-sm">Cancel</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Prompt Modal */}
+      {restorePromptData && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-modal-in">
+          <div className={`border rounded-3xl p-8 w-full max-w-md shadow-2xl flex flex-col items-center text-center ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+            <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mb-6">
+              <DownloadCloud className="w-8 h-8 text-blue-500" />
+            </div>
+            <h2 className="text-xl font-bold mb-2">Google Drive Backup Found</h2>
+            <p className={`text-sm mb-8 ${darkMode ? 'text-zinc-400' : 'text-slate-500'}`}>We found a backup from <b>{restorePromptData.fileDate}</b>. How would you like to restore this data?</p>
+
+            <div className="w-full space-y-3">
+              <button onClick={() => handleRestoreChoice('merge')} className="w-full py-4 px-6 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/25 flex flex-col items-center">
+                <span>Merge Backup</span>
+                <span className="text-[10px] font-normal opacity-80 mt-1">Keeps your current notes but adds anything missing</span>
+              </button>
+
+              <button onClick={() => handleRestoreChoice('overwrite')} className={`w-full py-4 px-6 rounded-2xl font-bold transition-all flex flex-col items-center border ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-50'}`}>
+                <span className="text-red-500">Clean Slate Overwrite</span>
+                <span className="text-[10px] font-normal opacity-60 mt-1 line-clamp-1">Deletes your current workspace and loads the backup entirely</span>
+              </button>
+            </div>
+
+            <button onClick={() => setRestorePromptData(null)} className="mt-6 text-xs font-bold opacity-50 hover:opacity-100 transition-opacity uppercase tracking-widest">Cancel</button>
           </div>
         </div>
       )}
