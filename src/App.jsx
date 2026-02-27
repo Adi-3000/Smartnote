@@ -97,6 +97,14 @@ export default function App() {
     }
   });
 
+  const [autoBackup, setAutoBackup] = useState(() => {
+    try {
+      return localStorage.getItem('smart-autobackup-v6') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   const [viewMode, setViewMode] = useState('grid');
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [activeFolderId, setActiveFolderId] = useState('all');
@@ -127,7 +135,21 @@ export default function App() {
     localStorage.setItem('smart-notes-v6', JSON.stringify(notes));
     localStorage.setItem('smart-folders-v6', JSON.stringify(folders));
     localStorage.setItem('smart-theme-v6', darkMode ? 'dark' : 'light');
-  }, [notes, folders, darkMode]);
+    localStorage.setItem('smart-autobackup-v6', autoBackup ? 'true' : 'false');
+  }, [notes, folders, darkMode, autoBackup]);
+
+  useEffect(() => {
+    if (autoBackup && notes.length > 0) {
+      const today = new Date().toLocaleDateString();
+      const lastBackup = localStorage.getItem('smart-backup-date');
+      if (lastBackup !== today) {
+        localStorage.setItem('smart-daily-backup-v6', JSON.stringify({ notes, folders }));
+        localStorage.setItem('smart-backup-date', today);
+        setCopyStatus('Daily Auto-Backup completed.');
+        setTimeout(() => setCopyStatus(null), 2000);
+      }
+    }
+  }, [notes, folders, autoBackup]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -594,9 +616,32 @@ export default function App() {
                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-md ${darkMode ? 'left-7' : 'left-1'}`} />
                 </button>
               </div>
+              <div className="flex items-center justify-between p-4 rounded-2xl border border-zinc-800/50">
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold">Daily Auto-Backup</span>
+                  <span className="text-xs opacity-50 mt-1">Saves a daily local snapshot</span>
+                </div>
+                <button onClick={() => setAutoBackup(!autoBackup)} className={`w-12 h-6 rounded-full relative transition-all duration-300 ${autoBackup ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-md ${autoBackup ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-4 pt-4">
                 <button onClick={() => handleBackup('json')} className="p-4 border border-zinc-800 rounded-2xl text-xs font-bold hover:bg-zinc-800">Export JSON</button>
                 <button onClick={() => fileInputRef.current.click()} className="p-4 border border-zinc-800 rounded-2xl text-xs font-bold hover:bg-zinc-800">Import JSON</button>
+                {localStorage.getItem('smart-daily-backup-v6') && (
+                  <button onClick={() => {
+                    if (window.confirm("Restore yesterday's snapshot? This will overwrite your current notes!")) {
+                      try {
+                        const snap = JSON.parse(localStorage.getItem('smart-daily-backup-v6'));
+                        if (snap.notes) setNotes(snap.notes);
+                        if (snap.folders) setFolders(snap.folders);
+                        setCopyStatus('Snapshot Restored!');
+                        setTimeout(() => setCopyStatus(null), 2000);
+                        setShowSettingsModal(false);
+                      } catch (e) { alert("Failed to restore snapshot."); }
+                    }
+                  }} className="col-span-2 p-4 border border-emerald-500/30 text-emerald-500 rounded-2xl text-xs font-bold hover:bg-emerald-500/10">Restore Daily Snapshot</button>
+                )}
               </div>
             </div>
           </div>
