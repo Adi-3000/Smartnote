@@ -344,7 +344,7 @@ export default function App() {
   };
 
   return (
-    <div className={`flex h-screen font-sans overflow-hidden transition-colors duration-500 ${darkMode ? 'dark bg-[#0a0a0a] text-zinc-100' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`flex w-full h-[100dvh] font-sans overflow-hidden transition-colors duration-500 ${darkMode ? 'dark bg-[#0a0a0a] text-zinc-100' : 'bg-slate-50 text-slate-900'}`}>
       <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".json" />
 
       {copyStatus && (
@@ -359,7 +359,7 @@ export default function App() {
       )}
 
       {/* Sidebar */}
-      <aside className={`absolute sm:relative left-0 top-0 bottom-0 h-full flex flex-col border-r transition-all duration-300 ease-in-out shrink-0 overflow-hidden z-[100] ${isSidebarOpen ? 'w-[85vw] max-w-[320px] sm:w-72 opacity-100 shadow-2xl sm:shadow-none translate-x-0' : 'w-0 opacity-0 -translate-x-full sm:translate-x-0'} ${darkMode ? 'bg-[#111111] border-zinc-800' : 'bg-white border-slate-200'}`}>
+      <aside className={`fixed sm:relative left-0 top-0 bottom-0 h-full flex flex-col border-r transition-all duration-300 ease-in-out shrink-0 overflow-hidden z-[100] ${isSidebarOpen ? 'w-[85vw] max-w-[320px] sm:w-72 opacity-100 shadow-2xl sm:shadow-none translate-x-0' : 'w-0 opacity-0 -translate-x-full sm:translate-x-0'} ${darkMode ? 'bg-[#111111] border-zinc-800' : 'bg-white border-slate-200'}`}>
         <div className="p-4 sm:p-6 flex items-center justify-between border-b border-zinc-800/50 h-20 shrink-0">
           <div className="flex items-center gap-2 cursor-pointer group" onClick={() => { setViewMode('grid'); setActiveFolderId('all'); }}>
             <div className="bg-indigo-600 p-1.5 rounded-lg shadow-lg shadow-indigo-600/20 group-hover:scale-110 transition-transform"><Book className="w-4 h-4 text-white" /></div>
@@ -559,7 +559,7 @@ export default function App() {
           )}
 
           {/* AI Sidebar */}
-          <aside className={`absolute sm:relative right-0 top-0 bottom-0 transition-all duration-300 w-[85vw] max-w-[380px] sm:w-96 ${isAiOpen ? 'translate-x-0 border-l shadow-2xl sm:shadow-none' : 'translate-x-full sm:w-0 sm:border-l-0 opacity-0 sm:opacity-100'} ${darkMode ? 'border-zinc-800/20 bg-zinc-900/95 sm:bg-zinc-900/30' : 'border-slate-200/50 bg-white sm:bg-white/90'} overflow-hidden flex flex-col backdrop-blur-md shrink-0 z-[110]`}>
+          <aside className={`fixed sm:relative right-0 top-0 bottom-0 transition-all duration-300 w-[85vw] max-w-[380px] sm:w-96 ${isAiOpen ? 'translate-x-0 border-l shadow-2xl sm:shadow-none' : 'translate-x-full sm:w-0 sm:border-l-0 opacity-0 sm:opacity-100'} ${darkMode ? 'border-zinc-800/20 bg-zinc-900/95 sm:bg-zinc-900/30' : 'border-slate-200/50 bg-white sm:bg-white/90'} overflow-hidden flex flex-col backdrop-blur-md shrink-0 z-[110]`}>
             <div className={`p-4 sm:p-6 border-b flex items-center justify-between h-20 shrink-0 ${darkMode ? 'border-zinc-800/20' : 'border-slate-200/50'}`}>
               <div className={`flex items-center gap-2 font-bold text-xs tracking-widest uppercase ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}><Sparkles className="w-4 h-4 animate-pulse" /> AI Assistant</div>
               <button className={`transition-colors ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-slate-400 hover:text-slate-800'}`} onClick={() => setIsAiOpen(false)}><X className="w-4 h-4" /></button>
