@@ -33,7 +33,7 @@ import {
   Copy
 } from 'lucide-react';
 
-const apiKey = "AIzaSyD5fV_TlK6BmbOSNYMXLqVXp5pQBY5528k";
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 export default function App() {
   // --- State Management ---
@@ -276,7 +276,7 @@ export default function App() {
     setIsTyping(true);
     const context = notes.slice(0, 5).map(n => `Title: ${n.title}\nContent: ${n.content}`).join('\n---\n');
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -284,11 +284,30 @@ export default function App() {
           systemInstruction: { parts: [{ text: `Assistant context: ${context}` }] }
         })
       });
+
+      if (!response.ok) {
+        let errorMessage = "Error reaching AI.";
+        if (response.status === 429) {
+          errorMessage = "Rate limit exceeded. Please wait a moment before trying again.";
+        } else if (response.status === 403) {
+          errorMessage = "Access forbidden. Please check if your API key is valid and your region is supported.";
+        } else {
+          try {
+            const errorData = await response.json();
+            errorMessage = `API Error: ${errorData.error?.message || response.status}`;
+          } catch {
+            errorMessage = `HTTP Error ${response.status}`;
+          }
+        }
+        setChatHistory(prev => [...prev, { role: 'assistant', text: errorMessage }]);
+        return;
+      }
+
       const data = await response.json();
       const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Gemini connection lost.";
       setChatHistory(prev => [...prev, { role: 'assistant', text: aiText }]);
     } catch {
-      setChatHistory(prev => [...prev, { role: 'assistant', text: "Error reaching AI." }]);
+      setChatHistory(prev => [...prev, { role: 'assistant', text: "Network error reaching AI." }]);
     } finally { setIsTyping(false); }
   };
 
