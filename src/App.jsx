@@ -276,7 +276,7 @@ export default function App() {
     setIsTyping(true);
     const context = notes.slice(0, 5).map(n => `Title: ${n.title}\nContent: ${n.content}`).join('\n---\n');
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
