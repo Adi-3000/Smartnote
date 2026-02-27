@@ -1,80 +1,73 @@
-# SmartNotes AI
+# 🧠 SmartNotes AI
 
-**[🔴 Live Demo: ultnote.netlify.app](https://ultnote.netlify.app)**
+Welcome to **SmartNotes AI**, a beautifully designed, highly functional workspace combining native local speed with advanced Cloud Synchronization and Artificial Intelligence!
 
-SmartNotes AI is a modern, privacy-first, fully responsive web application that supercharges your note-taking via rich text formatting, local offline storage, and an integrated Google Gemini AI assistant. 
+![SmartNotes AI](https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/book.svg)
 
-![SmartNotes UI](./public/favicon.svg)
+## ✨ Core Features
 
-## ✨ Features
+### 🚀 Google Drive Cloud Synchronization
+Experience ultra-fast, cross-device compatibility directly from your own personal Google Account! 
+- **Auto-Syncing**: When connected, SmartNotes silently backs up your entire workspace natively to your Drive every 60 minutes.
+- **Intelligent Restoration**: Re-installing or shifting to your mobile phone? Click *Restore Backup* from Settings! Choose between:
+  - **Clean Slate**: Overwrite your local cache strictly to what you uploaded.
+  - **Merge Backup**: Flawlessly inject only the missing files without deleting any newly created notes currently in your browser cache!
 
-- **Rich Text Editor**: Fully featured WYSIWYG editor supporting Bold, Italic, Headers, Lists, Blockquotes, and inline Image uploads.
-- **AI Assistant Integration**: Chat seamlessly with Google's Gemini AI directly within your workspace without context switching.
-- **Privacy First (Local Storage)**: All your notes, folders, and settings are saved securely within your browser's local storage. Not a single note touches an external database.
-- **Daily Auto-Backup**: Protects you from accidental data loss by taking daily snapshot backups locally, which you can restore at any point.
-- **Responsive Mobile Layout**: Beautiful, tailored slide-out sidebar layouts mimicking native mobile apps flawlessly.
-- **Data Portability**: Full support to Export and Import your entire workspace via `.json` files, or download/share single notes directly.
-- **Folder Management & Drag-and-Drop**: Organize effortlessly with customizable color-coded folders and drag-and-drop grid sorting.
-- **Dark Mode Native**: Complete automatic adaptivity between Sleek Dark themes and Clean Light themes.
+### 🤖 Gemini AI Assistant
+A context-aware smart companion powered by Google Gemini. Just pop open the right-side sliding drawer and fire away.
+- It actively reads your active text and can summarize or rewrite your complex thoughts.
+- Fast, secure markdown rendering.
 
-## 🚀 Getting Started
+### 📝 Next-Gen Rich Text Editor
+Write without limitations using a hyper-modern clean layout:
+- Supports formatting, block-quotes, images, lists, and headings natively.
+- Drag-and-drop the resulting note cards around your customizable grid screen.
 
-Provide a local or deployed environment. SmartNotes relies on Vite + React. 
+### 🔒 Privacy-First Architecture
+This app **has no database**. 
+Your data stays entirely on your physical storage disk within your local browser cache (`localStorage`) unless you explicitly hit the "Backup to Drive" button. 
 
-### Prerequisites
+---
 
-Ensure you have Node.js installed.
-- [Node.js](https://nodejs.org/)
-- Need a FREE Google Gemini API Key from Google AI Studio.
+## 💻 Tech Stack
+- Frontend Framework: **Vite** + **React 19**
+- Styling: **Tailwind CSS v4** + Custom CSS Animations
+- Icons: **Lucide React**
+- AI Backend: **Google Gemini API** (`@google/generative-ai`)
+- Cloud Connect: **Google Identity Services + Drive API v3**
 
-### Installation
+---
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-username/smartnotes-ai.git
-   cd smartnotes-ai
-   ```
+## 🛠️ Installation & Setup
 
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+Want to run SmartNotes AI on your own machine? 
 
-3. **Set up Environment Variables:**
-   Create a `.env` file in the root directory and add your Gemini API Key:
-   ```env
-   VITE_GEMINI_API_KEY=your_gemini_api_key_here
-   ```
+### 1️⃣ Clone & Install
+\`\`\`bash
+git clone https://github.com/your-username/smartnotes-ai.git
+cd smartnotes-ai
+npm install
+\`\`\`
 
-4. **Run the development server:**
-   ```bash
-   npm run dev
-   ```
+### 2️⃣ Setting Up Environment Variables
+Create a `.env` file at the exact root of your directory with the following configuration:
 
-5. Open [http://localhost:5173](http://localhost:5173) in your browser.
+\`\`\`env
+# Optional: Get from Google AI Studio
+VITE_GEMINI_API_KEY="your-gemini-key-here"
 
-## 🛠️ Tech Stack
+# Optional: Get from Google Cloud Console -> APIs & Services -> Credentials
+VITE_GOOGLE_CLIENT_ID="your-oauth-web-client-id-here.apps.googleusercontent.com"
+\`\`\`
 
-- **Framework**: [React](https://react.dev/) + [Vite](https://vitejs.dev/)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-- **Icons**: [Lucide React](https://lucide.dev/)
-- **AI Model**: Google Gemini API (`gemini-2.5-flash-lite`)
+*(Note: To get the Google Client ID, head to Google Cloud, create an OAuth 2.0 Client ID for a **Web Application**, and add `http://localhost:5173` into the Authorized JavaScript Origins block).*
 
-## 🚢 Deployment
+### 3️⃣ Run Locally
+\`\`\`bash
+npm run dev
+\`\`\`
+The beautiful app should launch instantly at \`http://localhost:5173\`! Enjoy your new private workspace.
 
-SmartNotes is optimized to run as a purely static site. It can be hosted entirely for free on platforms like **Netlify**, **Vercel**, or **GitHub Pages**.
+---
 
-Make sure to add your `VITE_GEMINI_API_KEY` to the Environment Variables of your hosting provider before building!
-
-```bash
-npm run build
-```
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome! 
-Feel free to check [issues page](https://github.com/your-username/smartnotes-ai/issues).
-
-## 📝 License
-
-This project is open source and available under the [MIT License](LICENSE).
+Built meticulously using bleeding-edge React architectures!

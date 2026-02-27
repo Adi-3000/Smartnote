@@ -67,6 +67,13 @@ const EditorBlock = ({ content, onChange }) => {
       onInput={e => {
         if (onChange) onChange(e.currentTarget.innerHTML);
       }}
+      onChange={e => {
+        if (e.target.type === 'checkbox') {
+          if (e.target.checked) e.target.setAttribute('checked', 'checked');
+          else e.target.removeAttribute('checked');
+          if (onChange) onChange(e.currentTarget.innerHTML);
+        }
+      }}
       className="w-full h-full outline-none text-lg lg:text-xl leading-relaxed pt-4 pb-40 custom-editor"
       style={{ minHeight: '60vh' }}
     />
@@ -91,10 +98,11 @@ const defaultNoteContent = `
   <h2>🛡️ Privacy Built-in</h2>
   <p>All notes, folders, and settings remain <b>100% locally on your browser cache</b>.</p>
   
-  <h2>💾 Auto-Backups & Sync</h2>
+  <h2>☁️ Google Drive Cloud Sync</h2>
   <ul>
-    <li><b>Daily Auto-Backup</b> is already ON! A local snapshot of your notes is saved daily automatically (check Settings to configure).</li>
-    <li>You can download or copy <code>.json</code> backups anytime to sync to your phone, or instantly share any single note as plain text!</li>
+    <li>Navigate to <b>Workspace Settings</b> to seamlessly connect your Google Drive.</li>
+    <li>Once connected, SmartNotes securely and silently backs up all your data every hour.</li>
+    <li>When you restore, you can choose to <b>Merge</b> entirely non-destructively, fetching only what's missing, or perform a complete clean-slate overwrite!</li>
   </ul>
   
   <blockquote>Tip: Drag and drop the note cards on your grid to easily reorganize them, or click the sidebar folders to color-code your life!</blockquote>
@@ -278,6 +286,41 @@ export default function App() {
 
     return () => clearTimeout(timeoutId);
   }, [googleDriveConnected, notes, folders]);
+
+  // --- Auto-Titling Effect ---
+  const titlingIdsRef = useRef(new Set());
+  useEffect(() => {
+    if (!activeNoteId || !activeNote?.content || activeNote.content.length < 20) return;
+    if (activeNote.title && activeNote.title.trim() !== '' && activeNote.title !== 'Untitled Note...') return;
+    if (titlingIdsRef.current.has(activeNoteId)) return;
+
+    const timeoutId = setTimeout(async () => {
+      titlingIdsRef.current.add(activeNoteId);
+      const plainText = activeNote.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
+      if (plainText.length < 15) return;
+
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `Generate a very brief (max 5 words) title for this note content: "${plainText.substring(0, 500)}". Output ONLY the title text, nothing else.` }] }]
+          })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const aiTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/[#*"]/g, '').trim();
+          if (aiTitle) {
+            setNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, title: aiTitle } : n));
+          }
+        }
+      } catch (err) {
+        console.error("Auto-title error:", err);
+      }
+    }, 3000);
+
+    return () => clearTimeout(timeoutId);
+  }, [activeNoteId, activeNote?.content, activeNote?.title]);
 
   useEffect(() => {
     const handleBeforeUnload = (e) => {
@@ -679,24 +722,42 @@ export default function App() {
     setChatInput('');
     setChatHistory(prev => [...prev, { role: 'user', text: userMsg }]);
     setIsTyping(true);
-    const context = notes.slice(0, 5).map(n => `Title: ${n.title}\nContent: ${n.content}`).join('\n---\n');
+
+    const context = notes.slice(0, 15).map(n => `ID: ${n.id} | Title: ${n.title} | Tags: ${(n.content.match(/#[a-zA-Z0-9_]+/g) || []).join(' ')} \nContent: ${n.content.substring(0, 200)}`).join('\n---\n');
+    const folderNames = folders.map(f => `{"id": "${f.id}", "name": "${f.name}"}`).join(', ');
+    const systemPrompt = `You are SmartNotes AI Assistant. You are a proactive agent, not a chat bot.
+
+CRITICAL DIRECTIVES:
+1. NEVER ASK QUESTIONS. If you need more info to tag or organize a note, MAKE AN INTELLIGENT GUESS based on its content.
+2. DO NOT explain your reasoning; just perform the requested actions.
+3. ALWAYS encapsulate your commands in a SINGLE \`\`\`json block at the end of your response.
+4. If asked to tag notes, rewrite the content of untagged notes to include them using UPDATE_NOTE.
+
+AVAILABLE FOLDERS: ${folderNames || "None"}.
+AVAILABLE ACTIONS:
+- {"type": "CREATE_NOTE", "title": "...", "content": "..."}
+- {"type": "MOVE_NOTE", "noteId": "...", "folderId": "..."}
+- {"type": "CREATE_FOLDER", "name": "...", "color": "..."}
+- {"type": "UPDATE_NOTE", "noteId": "...", "content": "Updated content WITH #tags"}
+
+NOTE CONTEXT:
+${context}`;
+
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: userMsg }] }],
-          systemInstruction: { parts: [{ text: `Assistant context: ${context}` }] }
+          systemInstruction: { parts: [{ text: systemPrompt }] }
         })
       });
 
       if (!response.ok) {
         let errorMessage = "Error reaching AI.";
-        if (response.status === 429) {
-          errorMessage = "Rate limit exceeded. Please wait a moment before trying again.";
-        } else if (response.status === 403) {
-          errorMessage = "Access forbidden. Please check if your API key is valid and your region is supported.";
-        } else {
+        if (response.status === 429) errorMessage = "Rate limit exceeded. Please wait a moment before trying again.";
+        else if (response.status === 403) errorMessage = "Access forbidden. Please check if your API key is valid and your region is supported.";
+        else {
           try {
             const errorData = await response.json();
             errorMessage = `API Error: ${errorData.error?.message || response.status}`;
@@ -709,8 +770,74 @@ export default function App() {
       }
 
       const data = await response.json();
-      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Gemini connection lost.";
-      setChatHistory(prev => [...prev, { role: 'assistant', text: aiText }]);
+      let aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Gemini connection lost.";
+
+      // Improved Action Processing
+      const jsonMatch = aiText.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        try {
+          const rawJson = jsonMatch[1].trim();
+          const parsed = JSON.parse(rawJson);
+          const actions = Array.isArray(parsed) ? parsed : (parsed.actions || []);
+
+          let actionCount = 0;
+          let tempNotes = null;
+          let tempFolders = null;
+
+          actions.forEach(action => {
+            if (action.type === 'CREATE_FOLDER') {
+              if (!tempFolders) tempFolders = [...folders];
+              const existing = tempFolders.find(f => f.name.toLowerCase() === action.name.toLowerCase());
+              if (!existing) {
+                tempFolders.push({
+                  id: action.id || 'f_' + Date.now().toString() + Math.random().toString(36).substring(2, 5),
+                  name: action.name,
+                  color: action.color || '#4f46e5'
+                });
+                actionCount++;
+              }
+            }
+            if (action.type === 'CREATE_NOTE') {
+              const newNote = {
+                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
+                title: action.title || 'AI Note',
+                content: action.content || '',
+                folderId: action.folderId || 'default',
+                timestamp: Date.now(),
+                isPinned: false
+              };
+              setNotes(prev => [newNote, ...prev]);
+              actionCount++;
+            }
+            if (action.type === 'MOVE_NOTE' && action.noteId && action.folderId) {
+              if (!tempNotes) tempNotes = [...notes];
+              const targetIdx = tempNotes.findIndex(n => n.id === action.noteId);
+              if (targetIdx !== -1) {
+                tempNotes[targetIdx] = { ...tempNotes[targetIdx], folderId: action.folderId };
+                actionCount++;
+              }
+            }
+            if (action.type === 'UPDATE_NOTE' && action.noteId) {
+              if (!tempNotes) tempNotes = [...notes];
+              const targetIdx = tempNotes.findIndex(n => n.id === action.noteId);
+              if (targetIdx !== -1) {
+                if (action.title) tempNotes[targetIdx].title = action.title;
+                if (action.content) tempNotes[targetIdx].content = action.content;
+                actionCount++;
+              }
+            }
+          });
+
+          if (tempNotes) setNotes(tempNotes);
+          if (tempFolders) setFolders(tempFolders);
+          if (actionCount > 0) {
+            setCopyStatus(`AI updated ${actionCount} items!`);
+            setTimeout(() => setCopyStatus(null), 3000);
+          }
+          aiText = aiText.replace(jsonMatch[0], '').trim();
+        } catch (err) { console.error("Agent Error:", err); }
+      }
+      setChatHistory(prev => [...prev, { role: 'assistant', text: aiText || "Tasks complete!" }]);
     } catch {
       setChatHistory(prev => [...prev, { role: 'assistant', text: "Network error reaching AI." }]);
     } finally { setIsTyping(false); }
@@ -744,13 +871,26 @@ export default function App() {
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 custom-scrollbar">
           <div className="space-y-1">
-            <button onClick={() => { setActiveFolderId('all'); setViewMode('grid'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all whitespace-nowrap group ${activeFolderId === 'all' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 translate-x-1' : (darkMode ? 'hover:bg-zinc-800/50' : 'hover:bg-slate-100')}`}><Hash className="w-4 h-4 shrink-0" /> All Library</button>
+            <button onClick={() => { setActiveFolderId('all'); setViewMode('grid'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all whitespace-nowrap group ${activeFolderId === 'all' && viewMode !== 'tasks' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 translate-x-1' : (darkMode ? 'hover:bg-zinc-800/50' : 'hover:bg-slate-100')}`}><Hash className="w-4 h-4 shrink-0" /> All Library</button>
+            <button onClick={() => { setActiveFolderId('all'); setViewMode('tasks'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all whitespace-nowrap group ${viewMode === 'tasks' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 translate-x-1' : (darkMode ? 'hover:bg-zinc-800/50' : 'hover:bg-slate-100')}`}><CheckSquare className="w-4 h-4 shrink-0" /> Task Board</button>
             <div className="pt-6 pb-2 px-2 flex items-center justify-between opacity-50 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Folders<Plus className="w-3 h-3 cursor-pointer hover:text-indigo-500 transition-colors" onClick={() => setShowFolderModal(true)} /></div>
             {folders.map(f => (
               <div key={f.id} onClick={() => { setActiveFolderId(f.id); setViewMode('grid'); }} className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm cursor-pointer transition-all whitespace-nowrap group ${activeFolderId === f.id ? 'bg-zinc-800 text-white translate-x-1' : (darkMode ? 'hover:bg-zinc-800/50 text-zinc-400' : 'hover:bg-slate-100 text-slate-500')}`}>
                 <Folder className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" style={{ color: f.color }} /><span className="truncate flex-1">{f.name}</span>
               </div>
             ))}
+
+            <div className="pt-6 pb-2 px-2 flex items-center justify-between opacity-50 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Tags</div>
+            <div className="flex flex-wrap gap-2 px-2">
+              {Array.from(new Set(notes.flatMap(n => {
+                const plainText = n.content ? n.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ') : '';
+                return plainText.match(/#[a-zA-Z0-9_]+/g) || [];
+              }))).map(tag => (
+                <span key={tag} onClick={() => { setSearchQuery(tag); setViewMode('grid'); setIsSidebarOpen(false); }} className={`text-[10px] font-bold px-2 py-1 rounded-full cursor-pointer transition-all ${searchQuery === tag ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : (darkMode ? 'bg-zinc-800 text-zinc-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}`}>
+                  {tag}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
         <div className="p-4 border-t border-zinc-800/20 shrink-0">
@@ -764,10 +904,10 @@ export default function App() {
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {!isSidebarOpen && <button onClick={() => setIsSidebarOpen(true)} className={`p-2 border rounded-lg transition-all hover:scale-105 active:scale-95 ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-50'}`}><PanelLeftOpen className="w-4 h-4" /></button>}
             <div className="flex-1 min-w-0">
-              {viewMode === 'grid' ? (
+              {viewMode === 'grid' || viewMode === 'tasks' ? (
                 <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-30" />
-                  <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className={`w-full bg-transparent border rounded-xl py-2 pl-10 pr-4 text-sm outline-none transition-all ${darkMode ? 'border-zinc-800 focus:border-indigo-500' : 'border-slate-200 focus:border-indigo-400'}`} />
+                  <input type="text" placeholder="Search notes..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className={`w-full bg-transparent border rounded-xl py-2 pl-10 pr-4 text-sm outline-none transition-all ${darkMode ? 'border-zinc-800 focus:border-indigo-500' : 'border-slate-200 focus:border-indigo-400'}`} />
                 </div>
               ) : (
                 <div className="flex items-center gap-3 overflow-hidden">
@@ -779,7 +919,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {viewMode === 'grid' && (
+            {(viewMode === 'grid' || viewMode === 'tasks') && (
               <div className="flex items-center gap-2 relative">
                 <div className={`flex items-center gap-1.5 transition-all duration-300 ${isSelectMode ? 'w-auto opacity-100' : 'w-0 opacity-0 overflow-hidden'}`}>
                   <button onClick={selectAllVisible} className={`px-3 py-2 rounded-xl text-xs font-bold border ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Select All</button>
@@ -910,7 +1050,50 @@ export default function App() {
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex relative">
           <div className="flex-1 overflow-y-auto p-6 lg:p-10 custom-scrollbar scroll-smooth">
-            {viewMode === 'grid' ? (
+            {viewMode === 'tasks' ? (
+              <div className="max-w-4xl mx-auto w-full h-full flex flex-col animate-in-fade">
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20 text-white"><CheckSquare className="w-6 h-6" /></div>
+                  <div>
+                    <h2 className="text-2xl font-bold">Task Board</h2>
+                    <p className={`text-sm ${darkMode ? 'text-zinc-400' : 'text-slate-500'}`}>All your checkboxes gathered in one smart list.</p>
+                  </div>
+                </div>
+
+                {(() => {
+                  const tasks = [];
+                  getFilteredNotes().forEach(note => {
+                    if (!note.content) return;
+                    const doc = new DOMParser().parseFromString(note.content, 'text/html');
+                    const checkboxes = doc.querySelectorAll('input[type="checkbox"]');
+                    checkboxes.forEach((cb, idx) => {
+                      let text = cb.nextSibling ? cb.nextSibling.textContent : '';
+                      if (cb.parentNode && cb.parentNode !== doc.body) text = cb.parentNode.textContent.trim();
+                      if (!text) text = "Unnamed task";
+                      tasks.push({ noteId: note.id, noteTitle: note.title, text: text, isChecked: cb.hasAttribute('checked'), cbIndex: idx });
+                    });
+                  });
+
+                  if (tasks.length === 0) {
+                    return <div className={`py-12 text-center text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-400'}`}>No tasks found. Open any note and tap the Checkbox icon to start creating tasks!</div>;
+                  }
+
+                  return (
+                    <div className="space-y-3 pb-20">
+                      {tasks.map((t, i) => (
+                        <div key={i} onClick={() => { setActiveNoteId(t.noteId); setViewMode('editor'); }} className={`group flex items-center justify-between p-4 rounded-xl border transition-all cursor-pointer ${darkMode ? 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800' : 'bg-white border-slate-200 hover:bg-slate-50 shadow-sm'}`}>
+                          <div className="flex items-center gap-4 truncate">
+                            <input type="checkbox" readOnly checked={t.isChecked} className="w-5 h-5 accent-indigo-600 cursor-pointer pointer-events-none shrink-0" />
+                            <span className={`text-sm font-medium truncate ${t.isChecked ? 'line-through opacity-40' : (darkMode ? 'text-zinc-200' : 'text-slate-700')}`}>{t.text}</span>
+                          </div>
+                          <div className={`text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-4 ${darkMode ? 'bg-zinc-800 text-zinc-400' : 'bg-slate-100 text-slate-500'}`}>from {t.noteTitle || 'Untitled'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
                 {getFilteredNotes().map((note, index) => (
                   <div
@@ -948,10 +1131,13 @@ export default function App() {
                       )}
                     </div>
                     <h3 className="font-bold text-lg mb-2 line-clamp-2 leading-tight group-hover:text-indigo-500">{note.title || 'Untitled'}</h3>
-                    <p className={`text-sm flex-1 overflow-hidden line-clamp-3 leading-relaxed transition-opacity ${darkMode ? 'text-zinc-400' : 'text-slate-600'} ${isSelectMode ? 'opacity-30' : 'opacity-60'}`}>{note.content ? note.content.replace(/<[^>]*>?/gm, '').substring(0, 150) : 'No content yet...'}</p>
+                    <div className={`text-sm flex-1 overflow-hidden transition-opacity pointer-events-none custom-preview-grid ${darkMode ? 'text-zinc-400' : 'text-slate-600'} ${isSelectMode ? 'opacity-30' : 'opacity-60'}`}>
+                      <div className="line-clamp-3 leading-relaxed" dangerouslySetInnerHTML={{ __html: note.content || 'No content yet...' }} />
+                    </div>
 
                     {(() => {
-                      const tags = note.content ? (note.content.match(/#[a-zA-Z0-9_]+/g) || []).slice(0, 3) : [];
+                      const plainText = note.content ? note.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ') : '';
+                      const tags = plainText ? (plainText.match(/#[a-zA-Z0-9_]+/g) || []).slice(0, 3) : [];
                       return tags.length > 0 && !isSelectMode ? (
                         <div className="flex items-center gap-1.5 mt-3 flex-wrap">
                           {tags.map((tag, tIndex) => (
@@ -991,7 +1177,8 @@ export default function App() {
                     { icon: Heading2, cmd: 'formatBlock', arg: 'H2' },
                     { icon: ListIcon, cmd: 'insertUnorderedList' },
                     { icon: ListOrdered, cmd: 'insertOrderedList' },
-                    { icon: Quote, cmd: 'formatBlock', arg: 'BLOCKQUOTE' }
+                    { icon: Quote, cmd: 'formatBlock', arg: 'BLOCKQUOTE' },
+                    { icon: CheckSquare, cmd: 'insertHTML', arg: '&nbsp;<input type="checkbox" style="width: 18px; height: 18px; margin-right: 8px; cursor: pointer; accent-color: #4f46e5; vertical-align: middle;" />&nbsp;' }
                   ].map(({ icon: Icon, cmd, arg }, i) => (
                     <button key={i} onMouseDown={(e) => { e.preventDefault(); document.execCommand(cmd, false, arg); }} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
                       <Icon className="w-4 h-4" />
@@ -1197,6 +1384,14 @@ export default function App() {
         .custom-editor a { color: #4f46e5; text-decoration: underline; }
         .custom-editor blockquote { border-left: 4px solid #4f46e5; padding-left: 1.25rem; font-style: italic; opacity: 0.9; margin: 1.5rem 0; background: ${darkMode ? 'rgba(79, 70, 229, 0.1)' : 'rgba(79, 70, 229, 0.05)'}; padding: 1rem 1rem 1rem 1.25rem; border-radius: 0 0.5rem 0.5rem 0; }
         .custom-editor div, .custom-editor p { min-height: 1.5rem; }
+        
+        /* Grid Preview Mini Styles */
+        .custom-preview-grid h1 { font-size: 1.1em; font-weight: 800; margin: 0.2rem 0; }
+        .custom-preview-grid h2 { font-size: 1em; font-weight: 700; margin: 0.2rem 0; }
+        .custom-preview-grid p, .custom-preview-grid div { margin: 0; min-height: 0; display: inline; }
+        .custom-preview-grid blockquote { border-left: 2px solid #4f46e5; padding-left: 0.5rem; margin: 0.2rem 0; font-style: italic; }
+        .custom-preview-grid ul, .custom-preview-grid ol { list-style-position: inside; padding-left: 0.5rem; margin: 0.2rem 0; }
+        .custom-preview-grid img { display: none; }
       `}</style>
     </div>
   );
