@@ -180,6 +180,21 @@ export default function App() {
   }, [notes, folders, autoBackup]);
 
   useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      // NOTE: Modern browsers strictly limit what you can do in 'beforeunload'.
+      // Triggering an automatic file download here is silently blocked by Chrome/Firefox/Safari
+      // for security reasons (preventing drive-by downloads).
+      // However, we can update local storage one final time to be absolutely sure we have the latest snapshot.
+      if (autoBackup) {
+        localStorage.setItem('smart-daily-backup-v6', JSON.stringify({ notes, folders }));
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [notes, folders, autoBackup]);
+
+  useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setActiveDropdown(null);
