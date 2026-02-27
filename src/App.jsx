@@ -39,8 +39,15 @@ import {
   List as ListIcon,
   ListOrdered,
   Image as ImageIcon,
-  Quote
+  Quote,
+  Pin,
+  PinOff,
+  FileCode2,
+  Tag,
+  MessageSquare
 } from 'lucide-react';
+import TurndownService from 'turndown';
+import html2pdf from 'html2pdf.js';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
@@ -133,6 +140,15 @@ export default function App() {
     }
   });
 
+  const [googleDriveConnected, setGoogleDriveConnected] = useState(() => {
+    try {
+      const stored = localStorage.getItem('smart-gdrive-connected-v6');
+      return stored !== null ? stored === 'true' : false;
+    } catch {
+      return false;
+    }
+  });
+
   const [viewMode, setViewMode] = useState('grid');
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [activeFolderId, setActiveFolderId] = useState('all');
@@ -164,7 +180,8 @@ export default function App() {
     localStorage.setItem('smart-folders-v6', JSON.stringify(folders));
     localStorage.setItem('smart-theme-v6', darkMode ? 'dark' : 'light');
     localStorage.setItem('smart-autobackup-v6', autoBackup ? 'true' : 'false');
-  }, [notes, folders, darkMode, autoBackup]);
+    localStorage.setItem('smart-gdrive-connected-v6', googleDriveConnected ? 'true' : 'false');
+  }, [notes, folders, darkMode, autoBackup, googleDriveConnected]);
 
   useEffect(() => {
     if (autoBackup && notes.length > 0) {
@@ -178,6 +195,68 @@ export default function App() {
       }
     }
   }, [notes, folders, autoBackup]);
+
+  // Hourly Auto-Sync to Google Drive if connected
+  useEffect(() => {
+    if (!googleDriveConnected) return;
+
+    let timeoutId;
+
+    // We try to trigger an hourly backup.
+    const runHourlyBackup = () => {
+      const now = Date.now();
+      const lastDriveAuthStr = localStorage.getItem('smart-gdrive-last-sync-time');
+      const lastDriveAuth = lastDriveAuthStr ? parseInt(lastDriveAuthStr) : 0;
+
+      // If 1 hour has passed (3600000 ms)
+      if (now - lastDriveAuth > 3600000) {
+        // Auto-trigger the handleDriveSync logic if token is available
+        // Because we need a user gesture for OAuth prompt if it expired, 
+        // we only silently sync if we already have an active valid token scope.
+        if (window.google?.accounts?.oauth2) {
+          const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'PLEASE_ADD_YOUR_CLIENT_ID';
+          const tokenClient = window.google.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: 'https://www.googleapis.com/auth/drive.file',
+            callback: async (tokenResponse) => {
+              if (tokenResponse.error) return;
+
+              try {
+                const fullData = { notes, folders, version: 'v6', timestamp: Date.now() };
+                const fileContent = JSON.stringify(fullData, null, 2);
+                const metadata = { name: `SmartNotes_AutoBackup_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`, mimeType: 'application/json' };
+                const form = new FormData();
+                form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+                form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+                const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+                  body: form
+                });
+                if (res.ok) {
+                  localStorage.setItem('smart-gdrive-last-sync-time', Date.now().toString());
+                  setCopyStatus('Hourly Auto-Sync to Drive Completed!');
+                  setTimeout(() => setCopyStatus(null), 2000);
+                }
+              } catch (e) {
+                console.error("Hourly sync failed", e);
+              }
+            },
+          });
+          // request access token silently if possible
+          tokenClient.requestAccessToken({ prompt: '' });
+        }
+      }
+
+      // Schedule next check
+      timeoutId = setTimeout(runHourlyBackup, 60000 * 5); // Check every 5 minutes
+    };
+
+    runHourlyBackup();
+
+    return () => clearTimeout(timeoutId);
+  }, [googleDriveConnected, notes, folders]);
 
   useEffect(() => {
     const handleBeforeUnload = (e) => {
@@ -264,6 +343,10 @@ export default function App() {
       const matchesSearch = (n.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (n.content || '').toLowerCase().includes(searchQuery.toLowerCase());
       return matchesFolder && matchesSearch;
+    }).sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return b.timestamp - a.timestamp;
     });
   };
 
@@ -311,6 +394,26 @@ export default function App() {
 
     if (format === 'json') {
       copyToClipboard(JSON.stringify(targetNotes, null, 2));
+    } else if (format === 'md') {
+      const turndownService = new TurndownService();
+      const shareContent = targetNotes.map(n => `# ${n.title || 'Untitled'}\n\n${turndownService.turndown(n.content || '')}\n`).join('\n---\n');
+      copyToClipboard(shareContent);
+    } else if (format === 'pdf') {
+      const container = document.createElement('div');
+      container.style.padding = '40px';
+      container.style.color = '#000';
+      container.innerHTML = targetNotes.map(n => `
+        <h1 style="font-family: sans-serif; font-size: 28px; font-weight: bold; margin-bottom: 24px; border-bottom: 1px solid #eaeaea; padding-bottom: 8px;">${n.title || 'Untitled'}</h1>
+        <div style="font-family: sans-serif; font-size: 14px; line-height: 1.6;">${n.content || ''}</div>
+      `).join('<div style="page-break-after: always;"></div>');
+
+      html2pdf().from(container).set({
+        margin: 10,
+        filename: targetNotes.length === 1 ? `${targetNotes[0].title || 'Untitled'}.pdf` : `SmartNotes_Export_${Date.now()}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      }).save();
     } else if (format === 'txt') {
       const shareContent = targetNotes.map(n => `TITLE: ${n.title || 'Untitled'}\n${n.content ? n.content.replace(/<[^>]*>?/gm, '') : ''}\n`).join('\n---\n');
       copyToClipboard(shareContent);
@@ -363,6 +466,177 @@ export default function App() {
     };
     reader.readAsText(file);
     e.target.value = null;
+  };
+
+  const handleDriveSync = async () => {
+    const initGoogleSync = () => {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'PLEASE_ADD_YOUR_CLIENT_ID';
+
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error !== undefined) {
+            setCopyStatus('Google Drive Auth Failed');
+            setTimeout(() => setCopyStatus(null), 3000);
+            return;
+          }
+          const accessToken = tokenResponse.access_token;
+
+          setIsSyncing(true);
+          try {
+            const fullData = { notes, folders, version: 'v6', timestamp: Date.now() };
+            const fileContent = JSON.stringify(fullData, null, 2);
+            const metadata = {
+              name: `SmartNotes_Backup_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`,
+              mimeType: 'application/json'
+            };
+
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+            const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`
+              },
+              body: form
+            });
+
+            if (response.ok) {
+              setCopyStatus('Successfully backed up to Google Drive!');
+              setGoogleDriveConnected(true);
+              localStorage.setItem('smart-gdrive-last-sync-time', Date.now().toString());
+            } else {
+              setCopyStatus('Failed to upload to Google Drive.');
+            }
+          } catch (error) {
+            console.error(error);
+            setCopyStatus('Error syncing with Google Drive.');
+          } finally {
+            setIsSyncing(false);
+            setTimeout(() => setCopyStatus(null), 3000);
+          }
+        },
+      });
+      tokenClient.requestAccessToken({ prompt: 'consent' });
+    };
+
+    if (!window.google?.accounts) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initGoogleSync;
+      document.body.appendChild(script);
+    } else {
+      initGoogleSync();
+    }
+  };
+
+  const handleDriveRestore = async () => {
+    const initGoogleDriveFetch = () => {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'PLEASE_ADD_YOUR_CLIENT_ID';
+
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error !== undefined) {
+            setCopyStatus('Google Drive Auth Failed');
+            setTimeout(() => setCopyStatus(null), 3000);
+            return;
+          }
+          const accessToken = tokenResponse.access_token;
+
+          setIsSyncing(true);
+          try {
+            // Find the most recent backup file automatically
+            const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name contains 'SmartNotes_' and mimeType='application/json'&orderBy=modifiedTime desc&pageSize=1&fields=files(id, name, modifiedTime)`, {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            });
+
+            if (!searchRes.ok) throw new Error("Failed to search Drive");
+
+            const searchData = await searchRes.json();
+
+            if (!searchData.files || searchData.files.length === 0) {
+              setCopyStatus('No SmartNotes backups found.');
+              setTimeout(() => setCopyStatus(null), 3000);
+              setIsSyncing(false);
+              return;
+            }
+
+            const latestFile = searchData.files[0];
+            const fileId = latestFile.id;
+
+            const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            });
+
+            if (res.ok) {
+              const text = await res.text();
+              const parsed = JSON.parse(text);
+              if (parsed.notes && Array.isArray(parsed.notes)) {
+
+                const fileDate = new Date(latestFile.modifiedTime).toLocaleString();
+                const userChoice = window.confirm(
+                  `Latest backup found!\nDate: ${fileDate}\n\nHow would you like to restore?\n\n` +
+                  "OK = 'Merge' (Keep your current newer notes and add missing ones from Drive).\n" +
+                  "Cancel = 'Clean Slate' (Completely overwrite everything with the Drive backup)."
+                );
+
+                if (userChoice) {
+                  setNotes(prev => {
+                    const existingIds = new Set(prev.map(n => n.id));
+                    const newNotes = parsed.notes.filter(n => !existingIds.has(n.id));
+                    return [...newNotes, ...prev];
+                  });
+
+                  if (parsed.folders) {
+                    setFolders(prev => {
+                      const existingIds = new Set(prev.map(f => f.id));
+                      const newFolders = parsed.folders.filter(f => !existingIds.has(f.id));
+                      return [...prev, ...newFolders];
+                    });
+                  }
+                  setCopyStatus('Merged safely with Google Drive backup!');
+                } else {
+                  setNotes(parsed.notes);
+                  if (parsed.folders) setFolders(parsed.folders);
+                  setCopyStatus('Clean Slate Restored!');
+                }
+
+                setTimeout(() => setCopyStatus(null), 3000);
+                setShowSettingsModal(false);
+              } else {
+                setCopyStatus('Invalid backup file format');
+                setTimeout(() => setCopyStatus(null), 3000);
+              }
+            }
+          } catch (e) {
+            setCopyStatus('Failed to read Drive file');
+            setTimeout(() => setCopyStatus(null), 3000);
+          } finally {
+            setGoogleDriveConnected(true);
+            setIsSyncing(false);
+          }
+        }
+      });
+      tokenClient.requestAccessToken({ prompt: '' }); // Try silent auth, falls back if needed
+    };
+
+    if (!window.google?.accounts) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initGoogleDriveFetch;
+      document.body.appendChild(script);
+    } else {
+      initGoogleDriveFetch();
+    }
   };
 
   const handleAskAI = async (e) => {
@@ -509,6 +783,12 @@ export default function App() {
                             <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('txt'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
                               <Copy className="w-3.5 h-3.5 text-indigo-500" /> Copy Text
                             </button>
+                            <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('md'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                              <FileCode2 className="w-3.5 h-3.5 text-blue-500" /> Copy Markdown
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('pdf'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                              <FileText className="w-3.5 h-3.5 text-rose-500" /> Export PDF
+                            </button>
                             <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('json'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
                               <Database className="w-3.5 h-3.5 text-emerald-500" /> Copy JSON
                             </button>
@@ -536,6 +816,22 @@ export default function App() {
 
             {viewMode === 'editor' && (
               <div className="flex items-center gap-1 sm:gap-1.5 mr-1 sm:mr-2">
+                <button
+                  onClick={() => setNotes(notes.map(n => n.id === activeNoteId ? { ...n, isPinned: !n.isPinned } : n))}
+                  className={`p-2.5 rounded-xl transition-all ${activeNote?.isPinned ? 'text-amber-500 hover:bg-amber-500/10' : (darkMode ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800')}`}
+                >
+                  {activeNote?.isPinned ? <PinOff className="w-5 h-5" /> : <Pin className="w-5 h-5" />}
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAiOpen(true);
+                    setChatInput(`Could you summarize my current note titled "${activeNote?.title || 'Untitled'}"?`);
+                  }}
+                  className={`p-2.5 rounded-xl transition-all ${darkMode ? 'hover:bg-zinc-800 text-indigo-400 hover:text-indigo-300' : 'hover:bg-indigo-50 text-indigo-600'}`}
+                >
+                  <MessageSquare className="w-5 h-5" />
+                </button>
+                <div className="w-px h-6 mx-1 bg-zinc-800/20 dark:bg-zinc-200/20" />
                 <div className="relative">
                   <button
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveDropdown(activeDropdown === 'shareEditor' ? null : 'shareEditor'); }}
@@ -547,6 +843,12 @@ export default function App() {
                     <div className={`absolute top-full right-0 mt-2 w-56 rounded-2xl border shadow-2xl py-2 z-[9999] animate-dropdown ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'}`}>
                       <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('txt'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
                         <Copy className="w-3.5 h-3.5 text-indigo-500" /> Copy Plain Text
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('md'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                        <FileCode2 className="w-3.5 h-3.5 text-blue-500" /> Copy Markdown
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('pdf'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
+                        <FileText className="w-3.5 h-3.5 text-rose-500" /> Export PDF
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); shareSelectedNotes('json'); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-bold ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-50 text-slate-700'}`}>
                         <Database className="w-3.5 h-3.5 text-emerald-500" /> Copy JSON
@@ -602,9 +904,30 @@ export default function App() {
                           <GripVertical className="w-3.5 h-3.5 opacity-0 group-hover:opacity-20 transition-opacity" />
                         </div>
                       )}
+
+                      {!isSelectMode && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setNotes(notes.map(n => n.id === note.id ? { ...n, isPinned: !n.isPinned } : n)); }}
+                          className={`p-1.5 rounded-lg transition-all ${note.isPinned ? 'text-amber-500 opacity-100' : 'opacity-0 group-hover:opacity-100 ' + (darkMode ? 'hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-600')}`}
+                        >
+                          <Pin className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                     <h3 className="font-bold text-lg mb-2 line-clamp-2 leading-tight group-hover:text-indigo-500">{note.title || 'Untitled'}</h3>
-                    <p className={`text-sm opacity-50 flex-1 overflow-hidden line-clamp-3 leading-relaxed ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>{note.content ? note.content.replace(/<[^>]*>?/gm, '').substring(0, 150) : 'No content yet...'}</p>
+                    <p className={`text-sm flex-1 overflow-hidden line-clamp-3 leading-relaxed transition-opacity ${darkMode ? 'text-zinc-400' : 'text-slate-600'} ${isSelectMode ? 'opacity-30' : 'opacity-60'}`}>{note.content ? note.content.replace(/<[^>]*>?/gm, '').substring(0, 150) : 'No content yet...'}</p>
+
+                    {(() => {
+                      const tags = note.content ? (note.content.match(/#[a-zA-Z0-9_]+/g) || []).slice(0, 3) : [];
+                      return tags.length > 0 && !isSelectMode ? (
+                        <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                          {tags.map((tag, tIndex) => (
+                            <span key={tIndex} onClick={(e) => { e.stopPropagation(); setSearchQuery(tag); }} className="text-[10px] items-center flex gap-1 font-bold px-2 py-1 rounded-full bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/20 transition-colors"><Tag className="w-3 h-3" /> {tag.replace('#', '')}</span>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
+
                     <div className="mt-4 pt-4 border-t border-zinc-800/10 flex items-center justify-between opacity-30 text-[10px] font-bold uppercase tracking-widest">
                       <span>{new Date(note.timestamp).toLocaleDateString()}</span>
                       <Clock className="w-3.5 h-3.5" />
@@ -615,6 +938,18 @@ export default function App() {
             ) : (
               <div className="max-w-4xl mx-auto w-full h-full flex flex-col animate-in-fade relative">
                 <div className={`flex flex-wrap items-center gap-1 sm:gap-2 p-1 sm:p-2 mb-4 rounded-xl border ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'} sticky top-0 z-10 shadow-sm max-w-full sm:max-w-fit mt-2`}>
+                  <select
+                    onChange={(e) => document.execCommand('fontSize', false, e.target.value)}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-bold bg-transparent outline-none cursor-pointer border-r ${darkMode ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-300 [&>option]:bg-zinc-900' : 'border-slate-200 hover:bg-slate-100 text-slate-700 [&>option]:bg-white'}`}
+                    defaultValue="3"
+                  >
+                    <option value="1">Small (10pt)</option>
+                    <option value="2">Medium (13pt)</option>
+                    <option value="3">Normal (16pt)</option>
+                    <option value="4">Large (18pt)</option>
+                    <option value="5">X-Large (24pt)</option>
+                    <option value="6">Huge (32pt)</option>
+                  </select>
                   {[
                     { icon: Bold, cmd: 'bold' },
                     { icon: Italic, cmd: 'italic' },
@@ -699,8 +1034,16 @@ export default function App() {
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-4 pt-4">
-                <button onClick={() => handleBackup('json')} className="p-4 border border-zinc-800 rounded-2xl text-xs font-bold hover:bg-zinc-800">Export JSON</button>
-                <button onClick={() => fileInputRef.current.click()} className="p-4 border border-zinc-800 rounded-2xl text-xs font-bold hover:bg-zinc-800">Import JSON</button>
+                <button onClick={() => handleBackup('json')} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Export JSON</button>
+                <button onClick={() => fileInputRef.current.click()} className={`p-4 border rounded-2xl text-xs font-bold transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-200 hover:bg-slate-100'}`}>Import JSON</button>
+
+                <button onClick={handleDriveSync} disabled={isSyncing} className="p-4 border border-blue-500/30 text-blue-600 dark:text-blue-500 rounded-2xl text-xs font-bold hover:bg-blue-500/10 flex items-center justify-center gap-2">
+                  <Cloud className="w-4 h-4" /> Save to Google Drive
+                </button>
+                <button onClick={handleDriveRestore} disabled={isSyncing} className="p-4 border border-blue-500/30 text-blue-600 dark:text-blue-500 rounded-2xl text-xs font-bold hover:bg-blue-500/10 flex items-center justify-center gap-2">
+                  <DownloadCloud className="w-4 h-4" /> Restore with Picker
+                </button>
+
                 {localStorage.getItem('smart-daily-backup-v6') && (
                   <button onClick={() => {
                     if (window.confirm("Restore yesterday's snapshot? This will overwrite your current notes!")) {
