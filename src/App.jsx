@@ -611,7 +611,7 @@ export default function App() {
           )}
 
           {/* AI Sidebar */}
-          <aside className={`fixed sm:relative right-0 top-0 bottom-0 transition-all duration-300 w-[85vw] max-w-[380px] sm:w-96 ${isAiOpen ? 'translate-x-0 border-l shadow-2xl sm:shadow-none' : 'translate-x-full sm:w-0 sm:border-l-0 opacity-0 sm:opacity-100'} ${darkMode ? 'border-zinc-800/20 bg-zinc-900/95 sm:bg-zinc-900/30' : 'border-slate-200/50 bg-white sm:bg-white/90'} overflow-hidden flex flex-col backdrop-blur-md shrink-0 z-[110]`}>
+          <aside className={`fixed sm:relative right-0 top-0 bottom-0 transition-all duration-300 w-[85vw] max-w-[380px] ${isAiOpen ? 'sm:w-96 translate-x-0 border-l shadow-2xl sm:shadow-none' : 'sm:w-0 translate-x-full sm:translate-x-0 sm:border-l-0 opacity-0 sm:opacity-100'} ${darkMode ? 'border-zinc-800/20 bg-zinc-900/95 sm:bg-zinc-900/30' : 'border-slate-200/50 bg-white sm:bg-white/90'} overflow-hidden flex flex-col backdrop-blur-md shrink-0 z-[110]`}>
             <div className={`p-4 sm:p-6 border-b flex items-center justify-between h-20 shrink-0 ${darkMode ? 'border-zinc-800/20' : 'border-slate-200/50'}`}>
               <div className={`flex items-center gap-2 font-bold text-xs tracking-widest uppercase ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}><Sparkles className="w-4 h-4 animate-pulse" /> AI Assistant</div>
               <button className={`transition-colors ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-slate-400 hover:text-slate-800'}`} onClick={() => setIsAiOpen(false)}><X className="w-4 h-4" /></button>
