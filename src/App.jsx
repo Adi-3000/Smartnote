@@ -252,13 +252,26 @@ export default function App() {
               try {
                 const fullData = { notes, folders, version: 'v6', timestamp: Date.now() };
                 const fileContent = JSON.stringify(fullData, null, 2);
-                const metadata = { name: `SmartNotes_AutoBackup_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`, mimeType: 'application/json' };
+                const fileName = `SmartNotes_AutoBackup_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`;
+
+                const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and mimeType='application/json' and trashed=false&fields=files(id)`, {
+                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+                });
+                const searchData = await searchRes.json();
+                const existingFile = searchData.files && searchData.files.length > 0 ? searchData.files[0] : null;
+
+                const metadata = { name: fileName, mimeType: 'application/json' };
                 const form = new FormData();
                 form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
                 form.append('file', new Blob([fileContent], { type: 'application/json' }));
 
-                const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-                  method: 'POST',
+                const url = existingFile
+                  ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`
+                  : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+                const method = existingFile ? 'PATCH' : 'POST';
+
+                const res = await fetch(url, {
+                  method: method,
                   headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
                   body: form
                 });
@@ -555,8 +568,16 @@ export default function App() {
       try {
         const fullData = { notes, folders, version: 'v6', timestamp: Date.now() };
         const fileContent = JSON.stringify(fullData, null, 2);
+        const fileName = `SmartNotes_Backup_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`;
+
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and mimeType='application/json' and trashed=false&fields=files(id)`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const searchData = await searchRes.json();
+        const existingFile = searchData.files && searchData.files.length > 0 ? searchData.files[0] : null;
+
         const metadata = {
-          name: `SmartNotes_Backup_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`,
+          name: fileName,
           mimeType: 'application/json'
         };
 
@@ -564,8 +585,13 @@ export default function App() {
         form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
         form.append('file', new Blob([fileContent], { type: 'application/json' }));
 
-        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-          method: 'POST',
+        const url = existingFile
+          ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`
+          : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+        const method = existingFile ? 'PATCH' : 'POST';
+
+        const response = await fetch(url, {
+          method: method,
           headers: { Authorization: `Bearer ${accessToken}` },
           body: form
         });
