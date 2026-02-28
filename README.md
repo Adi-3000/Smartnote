@@ -1,58 +1,140 @@
-# 🧠 SmartNotes AI
-
-Welcome to **SmartNotes AI**, a beautifully designed, agentic AI workspace combining local privacy with advanced Cloud Synchronization and Artificial Intelligence!
-
-![SmartNotes AI](https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/sparkles.svg)
-
-## ✨ Modern Capabilities
-
-### 🤖 Agentic AI Integration
-Powered by **Gemini 2.5 Flash Lite**, your assistant is now a proactive agent.
-- **Autonomous Action**: Ask it to "Tag all notes" or "Create a folder and move related notes," and it performs the JSON commands directly.
-- **Smart Auto-Titling**: Untitled notes are automatically named based on their content after a 3-second pause in typing.
-- **Context Awareness**: The AI remembers your notes and folder structure for better organization.
-
-### ✅ Integrated Task Management
-- **Interactive Checklists**: Add clickable checkboxes directly inside your rich text notes.
-- **Global Task Board**: A dedicated view that scans all notes and gathers every checkbox into one master to-do list.
-
-### 🚀 Performance & Connectivity
-- **Progressive Web App (PWA)**: Install SmartNotes as a native desktop or mobile app. Works offline!
-- **Google Drive Sync**: Secure, hourly auto-backups to your personal Drive.
-- **Tag Library**: Automatic hashtag discovery creates a dynamic sidebar for instant filtering.
-
-### 🎨 Premium Aesthetics
-- **Glassmorphism Design**: A sleek, dark/light mode interface with smooth animations.
-- **Live Preview Cards**: Note cards in the grid view render your actual HTML styles and smart content previews.
+<div align="center">
+  <h1>🧠 SmartNotes AI</h1>
+  <p><strong>A beautifully designed, privacy-first, agentic AI workspace that combines local storage with advanced cloud synchronization and artificial intelligence.</strong></p>
+  
+  <p>
+    <img src="https://img.shields.io/badge/React-19-blue.svg" alt="React" />
+    <img src="https://img.shields.io/badge/Vite-latest-purple.svg" alt="Vite" />
+    <img src="https://img.shields.io/badge/TailwindCSS-latest-38B2AC.svg" alt="TailwindCSS" />
+    <img src="https://img.shields.io/badge/Gemini%20AI-Integration-orange.svg" alt="Gemini" />
+    <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
+  </p>
+</div>
 
 ---
 
-## 💻 Tech Stack
-- Frontend: **Vite + React 19**
-- AI: **Google Gemini API**
-- PWA: **Vite PWA Plugin**
-- Cloud: **Google Drive API v3**
-- Styling: **Vanilla CSS + Glassmorphism**
+## 🌟 Overview
+
+**SmartNotes AI** is more than just a note-taking app; it's a proactive, intelligent personal workspace. Built with an offline-first architecture, it ensures your data remains yours while extending its capabilities with Google Drive sync and state-of-the-art AI integration. 
+
+Say goodbye to manual organization—let the integrated **Agentic AI Assistant** automatically title your notes, suggest tags, create folders, and seamlessly manage your workspace for you.
+
+---
+
+## ✨ Key Features
+
+### 🤖 Agentic AI Integration
+- **Autonomous Workspace Manager**: Powered by **Gemini 2.5 Flash Lite** (with Puter.js fallback). Simply tell the assistant to "Tag all my meeting notes", "Create a Work folder and move related notes", or "Filter out my travel ideas", and it performs precise JSON-based actions directly on your workspace.
+- **Smart Auto-Titling**: Start typing, and the AI intelligently analyzes your content to automatically generate a concise title after you pause.
+- **Context-Aware Chat**: Converse with the AI about the contents of your notes. The assistant has full context of your last 40 notes and folders.
+
+### 📝 Advanced Editing & Organization
+- **Rich Text Editing**: Clean, distraction-free editor supporting inline tags, formatting, lists, and quotes.
+- **Drag & Drop Reordering**: Easily reorganize notes on your main grid simply by dragging them.
+- **Dynamic Tag Management**: Use inline `#tags` anywhere in your text, which then populate a centralized sidebar filter list for instant searching.
+- **Pinning & Selection**: Pin important notes to keep them at the top, or select multiple notes to move, delete, or share them in bulk.
+- **Custom Folders**: Create, color-code, and manage endless custom folders to store specific notes.
+
+### ✅ Integrated Task Board
+- **Global Checklists**: A dedicated "Task Board" view automatically scans all notes for checkboxes, aggregating every task into one master to-do list.
+
+### 🚀 Cloud Sync & Backup Strategy
+- **Local-First & Offline Capable**: All notes securely stored via LocalStorage. Progressive Web App (PWA) compatible so you can run it offline like a native desktop/mobile app.
+- **Google Drive Integration**: Secure manual and **hourly auto-backups** to your linked Google Drive account.
+- **Smart Restore**: Intelligently merge or overwrite local data with Google Drive backups seamlessly.
+- **Flexible Exports**: Export selected notes or your full library to **JSON, Markdown (MD), Plain Text (TXT), or PDF**. Share via the native system dialog.
+
+### 🎨 Premium UI/UX Design
+- **Sleek Aesthetic**: A modern interface featuring subtle glassmorphism, responsive grid layouts, and interactive micro-animations.
+- **Dark & Light Mode**: Seamlessly toggle between eye-friendly dark mode themes and crisp light mode environments.
+- **Live Preview Cards**: Note cards display accurate previews of formatting directly on the dashboard.
+
+---
+
+## 💻 Technology Stack
+
+- **Frontend Framework**: React 19 (via Vite)
+- **Styling**: Vanilla CSS + Tailwind CSS (via PostCSS)
+- **Icons**: Lucide React
+- **AI/LLM**: Google Gemini API (`generativelanguage.googleapis.com`) & Puter.js SDK
+- **Backend/Cloud**: Google Drive API v3 (OAuth2 Client)
+- **Exports**: `html2pdf.js` & `turndown`
 
 ---
 
 ## 🛠️ Getting Started
 
-1. **Clone & Install**:
-   ```bash
-   git clone https://github.com/your-username/smartnotes-ai.git
-   npm install
-   ```
-2. **Setup .env**:
-   ```env
-   VITE_GEMINI_API_KEY="your_api_key"
-   VITE_GOOGLE_CLIENT_ID="your_client_id"
-   ```
-3. **Run**:
-   ```bash
-   npm run dev
-   ```
+Follow these instructions to get a copy of the project up and running on your local machine.
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v16.x or newer)
+- npm or yarn
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-username/smartnotes-ai.git
+cd smartnotes-ai
+```
+
+### 2. Install Dependencies
+
+```bash
+npm install
+```
+
+### 3. Environment Variables
+
+You need API credentials from Google for both Gemini AI and Google Drive sync. Create a `.env` file in the root of your project:
+
+```env
+# Google Gemini API Key
+VITE_GEMINI_API_KEY="your_gemini_api_key_here"
+
+# Google Cloud OAuth 2.0 Client ID (For Google Drive Sync)
+VITE_GOOGLE_CLIENT_ID="your_google_oauth_client_id_here"
+```
+> **Note:** To enable Drive sync, your Google Cloud Console project must have the Google Drive API enabled and your Authorized JavaScript origins configured for your localhost/production URL.
+
+### 4. Run the Development Server
+
+```bash
+npm run dev
+```
+
+Your app should now be running locally at `http://localhost:5173`.
 
 ---
 
-Built for speed, privacy, and true AI productivity. 🚀
+## 📖 Usage Guide
+
+- **Creating a Note**: Click the overarching "New Note" or "Add Task" buttons on the dashboard to get started. 
+- **Auto-Titling**: Leave the title as "Untitled Note...", and once you've typed a few sentences, wait 3 seconds—the AI will title it automatically.
+- **Using the AI Assistant**: Click the floating "Sparkles" button (or the AI sidebar icon) to open the chat. Type instructions like `"Make a 'Receipts' folder and move note XYZ into it"`.
+- **Syncing to Drive**: Open Settings and click "Connect to Google Drive". Once authenticated, you can enable auto-sync or manually push updates.
+- **Exporting**: Select one or more notes (long-press/click checkboxes), then click the "Share" button to choose your export format (PDF, Markdown, etc.).
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome!
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+---
+
+## 📜 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+<div align="center">
+  <p>Built for speed, privacy, and true AI productivity. 🚀</p>
+</div>
