@@ -44,14 +44,15 @@ import {
   PinOff,
   FileCode2,
   Tag,
-  MessageSquare
+  MessageSquare,
+  Table
 } from 'lucide-react';
 import TurndownService from 'turndown';
 import html2pdf from 'html2pdf.js';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-const EditorBlock = ({ content, onChange }) => {
+const EditorBlock = ({ content, onChange, onSelectionChange, darkMode }) => {
   const contentRef = useRef(null);
 
   useEffect(() => {
@@ -60,6 +61,17 @@ const EditorBlock = ({ content, onChange }) => {
     }
   }, [content]);
 
+  const handleSelection = () => {
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      // Check if selection is within the editor
+      if (contentRef.current.contains(range.commonAncestorContainer)) {
+        onSelectionChange?.(range.cloneRange());
+      }
+    }
+  };
+
   return (
     <div
       ref={contentRef}
@@ -67,6 +79,9 @@ const EditorBlock = ({ content, onChange }) => {
       onInput={e => {
         if (onChange) onChange(e.currentTarget.innerHTML);
       }}
+      onMouseUp={handleSelection}
+      onKeyUp={handleSelection}
+      onFocus={handleSelection}
       onChange={e => {
         if (e.target.type === 'checkbox') {
           if (e.target.checked) e.target.setAttribute('checked', 'checked');
@@ -74,9 +89,46 @@ const EditorBlock = ({ content, onChange }) => {
           if (onChange) onChange(e.currentTarget.innerHTML);
         }
       }}
-      className="w-full h-full outline-none text-lg lg:text-xl leading-relaxed pt-4 pb-40 custom-editor"
+      className={`w-full h-full outline-none text-lg lg:text-xl leading-relaxed p-8 sm:p-12 rounded-[2rem] border transition-all custom-editor ${darkMode ? 'border-zinc-800/50 bg-zinc-900/30' : 'border-slate-200/60 bg-white shadow-sm'
+        }`}
       style={{ minHeight: '60vh' }}
     />
+  );
+};
+
+const TableGridSelector = ({ onSelect, darkMode }) => {
+  const [hovered, setHovered] = useState({ r: 0, c: 0 });
+  const size = 8; // 8x8 grid
+
+  return (
+    <div className={`p-4 rounded-2xl border shadow-2xl z-[9999] animate-dropdown ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'}`} onClick={(e) => e.stopPropagation()}>
+      <div className="mb-3 text-[10px] font-bold uppercase opacity-60 text-center flex items-center justify-between">
+        <span>Insert Table</span>
+        <span className="text-indigo-500 italic">{hovered.r > 0 ? `${hovered.r} x ${hovered.c}` : 'Select Size'}</span>
+      </div>
+      <div
+        className="grid gap-1.5"
+        style={{ gridTemplateColumns: `repeat(${size}, 1fr)` }}
+        onMouseLeave={() => setHovered({ r: 0, c: 0 })}
+      >
+        {Array.from({ length: size * size }).map((_, i) => {
+          const r = Math.floor(i / size) + 1;
+          const c = (i % size) + 1;
+          const isActive = r <= hovered.r && c <= hovered.c;
+          return (
+            <div
+              key={i}
+              onMouseEnter={() => setHovered({ r, c })}
+              onMouseDown={(e) => { e.preventDefault(); onSelect(r, c); }}
+              className={`w-5 h-5 sm:w-6 sm:h-6 rounded-md border transition-all cursor-pointer ${isActive
+                ? 'bg-indigo-600 border-indigo-400 scale-105 shadow-md shadow-indigo-600/20'
+                : (darkMode ? 'bg-zinc-800 border-zinc-700 hover:border-zinc-500' : 'bg-slate-50 border-slate-200 hover:border-slate-300')
+                }`}
+            />
+          );
+        })}
+      </div>
+    </div>
   );
 };
 
@@ -201,7 +253,49 @@ export default function App() {
 
   const fileInputRef = useRef(null);
   const dropdownRef = useRef(null);
+  const tableDropdownRef = useRef(null);
+  const lastRangeRef = useRef(null);
   const activeNote = notes.find(n => n.id === activeNoteId);
+
+  const insertTable = (rows, cols) => {
+    let tableHtml = `<table style="width: 100%; border-collapse: collapse; margin: 1.5rem 0; border: 1px solid ${darkMode ? '#333' : '#ddd'};">`;
+    tableHtml += `<thead><tr style="background: ${darkMode ? '#1a1a1a' : '#f8fafc'};">`;
+    for (let c = 1; c <= cols; c++) {
+      tableHtml += `<th style="border: 1px solid ${darkMode ? '#333' : '#ddd'}; padding: 12px; text-align: left; font-weight: bold;">Header ${c}</th>`;
+    }
+    tableHtml += `</tr></thead><tbody>`;
+    for (let r = 1; r <= rows; r++) {
+      tableHtml += `<tr>`;
+      for (let c = 1; c <= cols; c++) {
+        tableHtml += `<td style="border: 1px solid ${darkMode ? '#333' : '#ddd'}; padding: 12px;">Cell</td>`;
+      }
+      tableHtml += `</tr>`;
+    }
+    tableHtml += `</tbody></table><p>&nbsp;</p>`;
+
+    // Restore selection if lost
+    const editor = document.querySelector('.custom-editor');
+    if (editor) {
+      const selection = window.getSelection();
+
+      // If editor isn't focused, refocus it and restore range
+      if (document.activeElement !== editor) {
+        editor.focus();
+        if (lastRangeRef.current) {
+          selection.removeAllRanges();
+          selection.addRange(lastRangeRef.current);
+        }
+      }
+
+      document.execCommand('insertHTML', false, tableHtml);
+      setActiveDropdown(null);
+      // Re-trigger selection capture after insertion
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0) lastRangeRef.current = sel.getRangeAt(0).cloneRange();
+      }, 10);
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem('smart-notes-v6', JSON.stringify(notes));
@@ -362,6 +456,9 @@ export default function App() {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setActiveDropdown(null);
+      }
+      if (tableDropdownRef.current && !tableDropdownRef.current.contains(event.target)) {
+        if (activeDropdown === 'table') setActiveDropdown(null);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -1179,7 +1276,7 @@ ${context}`;
         <div className="flex-1 overflow-hidden flex relative">
           <div className="flex-1 overflow-y-auto p-6 lg:p-10 custom-scrollbar scroll-smooth">
             {viewMode === 'tasks' ? (
-              <div className="max-w-4xl mx-auto w-full h-full flex flex-col animate-in-fade">
+              <div className="max-w-6xl mx-auto w-full h-full flex flex-col animate-in-fade">
                 <div className="flex items-center gap-3 mb-8">
                   <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20 text-white"><CheckSquare className="w-6 h-6" /></div>
                   <div>
@@ -1285,7 +1382,7 @@ ${context}`;
                 ))}
               </div>
             ) : (
-              <div className="max-w-4xl mx-auto w-full h-full flex flex-col animate-in-fade relative">
+              <div className="max-w-6xl mx-auto w-full h-full flex flex-col animate-in-fade relative">
                 <div className={`flex flex-wrap items-center gap-1 sm:gap-2 p-1 sm:p-2 mb-4 rounded-xl border ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'} sticky top-0 z-10 shadow-sm max-w-full sm:max-w-fit mt-2`}>
                   <select
                     onChange={(e) => document.execCommand('fontSize', false, e.target.value)}
@@ -1308,12 +1405,27 @@ ${context}`;
                     { icon: ListIcon, cmd: 'insertUnorderedList' },
                     { icon: ListOrdered, cmd: 'insertOrderedList' },
                     { icon: Quote, cmd: 'formatBlock', arg: 'BLOCKQUOTE' },
-                    { icon: CheckSquare, cmd: 'insertHTML', arg: '&nbsp;<input type="checkbox" style="width: 18px; height: 18px; margin-right: 8px; cursor: pointer; accent-color: #4f46e5; vertical-align: middle;" />&nbsp;' }
+                    { icon: CheckSquare, cmd: 'insertHTML', arg: '&nbsp;<input type="checkbox" style="width: 18px; height: 18px; margin-right: 8px; cursor: pointer; accent-color: #4f46e5; vertical-align: middle;" />&nbsp;' },
                   ].map(({ icon: Icon, cmd, arg }, i) => (
                     <button key={i} onMouseDown={(e) => { e.preventDefault(); document.execCommand(cmd, false, arg); }} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
                       <Icon className="w-4 h-4" />
                     </button>
                   ))}
+
+                  <div className="relative" ref={tableDropdownRef}>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); setActiveDropdown(activeDropdown === 'table' ? null : 'table'); }}
+                      className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'} ${activeDropdown === 'table' ? (darkMode ? 'bg-zinc-800' : 'bg-slate-100') : ''}`}
+                    >
+                      <Table className="w-4 h-4" />
+                    </button>
+                    {activeDropdown === 'table' && (
+                      <div className="absolute top-full left-0 mt-2 z-[9999]">
+                        <TableGridSelector darkMode={darkMode} onSelect={insertTable} />
+                      </div>
+                    )}
+                  </div>
+
                   <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-zinc-800' : 'bg-slate-200'}`} />
                   <label className={`p-2 rounded-lg transition-colors cursor-pointer ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
                     <ImageIcon className="w-4 h-4" />
@@ -1352,7 +1464,12 @@ ${context}`;
                     </div>
                   );
                 })()}
-                <EditorBlock content={activeNote?.content || ''} onChange={content => setNotes(notes.map(n => n.id === activeNoteId ? { ...n, content } : n))} />
+                <EditorBlock
+                  content={activeNote?.content || ''}
+                  onChange={content => setNotes(notes.map(n => n.id === activeNoteId ? { ...n, content } : n))}
+                  onSelectionChange={range => lastRangeRef.current = range}
+                  darkMode={darkMode}
+                />
               </div>
             )}
           </div>
@@ -1536,6 +1653,7 @@ ${context}`;
         .animate-in-slide-up { animation: slide-up 200ms ease-out both; }
         @keyframes pulse-subtle { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .custom-editor[contenteditable]:empty::before { content: "Start writing something brilliant..."; opacity: 0.3; }
+        .custom-editor:focus-within { border-color: ${darkMode ? 'rgba(79, 70, 229, 0.4)' : 'rgba(79, 70, 229, 0.3)'}; box-shadow: 0 10px 30px -10px ${darkMode ? 'rgba(0,0,0,0.5)' : 'rgba(79, 70, 229, 0.1)'}; }
         .custom-editor img { max-width: 100%; border-radius: 0.75rem; margin: 1.5rem 0; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .custom-editor h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 1rem; margin-top: 2rem; line-height: 1.2; }
         .custom-editor h2 { font-size: 1.875rem; font-weight: 700; margin-bottom: 0.75rem; margin-top: 1.5rem; }
@@ -1543,6 +1661,10 @@ ${context}`;
         .custom-editor ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1rem; }
         .custom-editor a { color: #4f46e5; text-decoration: underline; }
         .custom-editor blockquote { border-left: 4px solid #4f46e5; padding-left: 1.25rem; font-style: italic; opacity: 0.9; margin: 1.5rem 0; background: ${darkMode ? 'rgba(79, 70, 229, 0.1)' : 'rgba(79, 70, 229, 0.05)'}; padding: 1rem 1rem 1rem 1.25rem; border-radius: 0 0.5rem 0.5rem 0; }
+        .custom-editor table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; border-radius: 0.75rem; overflow: hidden; border: 1px solid ${darkMode ? '#333' : '#ddd'}; }
+        .custom-editor th { background: ${darkMode ? '#1a1a1a' : '#f8fafc'}; color: ${darkMode ? '#eee' : '#333'}; padding: 12px; border: 1px solid ${darkMode ? '#333' : '#ddd'}; text-align: left; font-weight: bold; }
+        .custom-editor td { padding: 12px; border: 1px solid ${darkMode ? '#333' : '#ddd'}; color: ${darkMode ? '#ccc' : '#444'}; }
+        .custom-editor tr:hover { background: ${darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)'}; }
         .custom-editor div, .custom-editor p { min-height: 1.5rem; }
         
         /* Grid Preview Mini Styles */
@@ -1551,7 +1673,7 @@ ${context}`;
         .custom-preview-grid p, .custom-preview-grid div { margin: 0; min-height: 0; display: inline; }
         .custom-preview-grid blockquote { border-left: 2px solid #4f46e5; padding-left: 0.5rem; margin: 0.2rem 0; font-style: italic; }
         .custom-preview-grid ul, .custom-preview-grid ol { list-style-position: inside; padding-left: 0.5rem; margin: 0.2rem 0; }
-        .custom-preview-grid img { display: none; }
+        .custom-preview-grid img, .custom-preview-grid table { display: none; }
       `}</style>
     </div >
   );

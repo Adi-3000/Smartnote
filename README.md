@@ -29,7 +29,7 @@ Say goodbye to manual organization—let the integrated **Agentic AI Assistant**
 - **Context-Aware Chat**: Converse with the AI about the contents of your notes. The assistant has full context of your last 40 notes and folders.
 
 ### 📝 Advanced Editing & Organization
-- **Rich Text Editing**: Clean, distraction-free editor supporting inline tags, formatting, lists, and quotes.
+- **Rich Text Editing**: Clean, distraction-free editor supporting inline tags, formatting, lists, tables, and quotes.
 - **Drag & Drop Reordering**: Easily reorganize notes on your main grid simply by dragging them.
 - **Dynamic Tag Management**: Use inline `#tags` anywhere in your text, which then populate a centralized sidebar filter list for instant searching.
 - **Pinning & Selection**: Pin important notes to keep them at the top, or select multiple notes to move, delete, or share them in bulk.
