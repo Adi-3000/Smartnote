@@ -45,7 +45,11 @@ import {
   FileCode2,
   Tag,
   MessageSquare,
-  Table
+  Table,
+  Rows,
+  Columns,
+  PlusCircle,
+  MinusCircle
 } from 'lucide-react';
 import TurndownService from 'turndown';
 import html2pdf from 'html2pdf.js';
@@ -255,6 +259,7 @@ export default function App() {
   const dropdownRef = useRef(null);
   const tableDropdownRef = useRef(null);
   const lastRangeRef = useRef(null);
+  const [isInTable, setIsInTable] = useState(false);
   const activeNote = notes.find(n => n.id === activeNoteId);
 
   const insertTable = (rows, cols) => {
@@ -292,8 +297,99 @@ export default function App() {
       // Re-trigger selection capture after insertion
       setTimeout(() => {
         const sel = window.getSelection();
-        if (sel.rangeCount > 0) lastRangeRef.current = sel.getRangeAt(0).cloneRange();
+        if (sel.rangeCount > 0) {
+          lastRangeRef.current = sel.getRangeAt(0).cloneRange();
+          handleSelectionChange(lastRangeRef.current);
+        }
       }, 10);
+    }
+  };
+
+  const handleSelectionChange = (range) => {
+    lastRangeRef.current = range;
+    if (!range) {
+      setIsInTable(false);
+      return;
+    }
+    let node = range.commonAncestorContainer;
+    if (node.nodeType === 3) node = node.parentNode;
+
+    let foundTable = false;
+    while (node && node !== document.body && node.parentElement) {
+      if (node.nodeName === 'TD' || node.nodeName === 'TH' || node.nodeName === 'TABLE') {
+        foundTable = true;
+        break;
+      }
+      node = node.parentElement;
+    }
+    setIsInTable(foundTable);
+  };
+
+  const manipulateTable = (type) => {
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return;
+    let node = selection.anchorNode;
+    while (node && node.nodeName !== 'TD' && node.nodeName !== 'TH' && node !== document.body) {
+      node = node.parentNode;
+    }
+    if (!node || (node.nodeName !== 'TD' && node.nodeName !== 'TH')) return;
+
+    const cell = node;
+    const row = cell.parentElement;
+    const table = cell.closest('table'); // Use closest for robustness
+    if (!table) return;
+
+    if (type === 'addRow') {
+      const newRow = table.insertRow(row.rowIndex + 1);
+      // Determine column count based on the first row of the table body or header
+      const colCount = table.tBodies.length > 0 && table.tBodies[0].rows.length > 0 ? table.tBodies[0].rows[0].cells.length : table.rows[0].cells.length;
+      for (let i = 0; i < colCount; i++) {
+        const newCell = newRow.insertCell(i);
+        newCell.style.border = `1px solid ${darkMode ? '#333' : '#ddd'}`;
+        newCell.style.padding = '12px';
+        newCell.innerHTML = 'Cell';
+      }
+    } else if (type === 'deleteRow') {
+      if (table.rows.length > 1) { // Ensure there's more than one row before deleting
+        table.deleteRow(row.rowIndex);
+      } else {
+        table.remove();
+        setIsInTable(false);
+      }
+    } else if (type === 'addColumn') {
+      const colIndex = cell.cellIndex;
+      for (let i = 0; i < table.rows.length; i++) {
+        const r = table.rows[i];
+        const isHeader = r.parentElement.nodeName === 'THEAD' || (i === 0 && r.cells[colIndex]?.nodeName === 'TH'); // Check if cell exists
+        const newCell = document.createElement(isHeader ? 'th' : 'td');
+        newCell.style.border = `1px solid ${darkMode ? '#333' : '#ddd'}`;
+        newCell.style.padding = '12px';
+        if (isHeader) {
+          newCell.style.textAlign = 'left';
+          newCell.style.fontWeight = 'bold';
+          newCell.innerHTML = 'Header';
+        } else {
+          newCell.innerHTML = 'Cell';
+        }
+        // Insert at colIndex + 1, or append if it's the last column
+        r.insertBefore(newCell, r.cells[colIndex + 1] || null);
+      }
+    } else if (type === 'deleteColumn') {
+      const colIndex = cell.cellIndex;
+      if (table.rows[0].cells.length > 1) { // Ensure there's more than one column before deleting
+        for (let i = 0; i < table.rows.length; i++) {
+          table.rows[i].deleteCell(colIndex);
+        }
+      } else {
+        table.remove();
+        setIsInTable(false);
+      }
+    }
+
+    // Update state to match DOM
+    const editor = document.querySelector('.custom-editor');
+    if (editor) {
+      setNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, content: editor.innerHTML } : n));
     }
   };
 
@@ -1426,6 +1522,27 @@ ${context}`;
                     )}
                   </div>
 
+                  {isInTable && (
+                    <>
+                      <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-zinc-800' : 'bg-slate-200'}`} />
+                      <div className="flex items-center gap-0.5">
+                        <button onMouseDown={(e) => { e.preventDefault(); manipulateTable('addRow'); }} title="Add Row" className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
+                          <Rows className="w-4 h-4" /><PlusCircle className="w-3 h-3 -ml-1 text-indigo-500" />
+                        </button>
+                        <button onMouseDown={(e) => { e.preventDefault(); manipulateTable('deleteRow'); }} title="Delete Row" className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
+                          <Rows className="w-4 h-4" /><MinusCircle className="w-3 h-3 -ml-1 text-rose-500" />
+                        </button>
+                        <button onMouseDown={(e) => { e.preventDefault(); manipulateTable('addColumn'); }} title="Add Column" className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
+                          <Columns className="w-4 h-4" /><PlusCircle className="w-3 h-3 -ml-1 text-indigo-500" />
+                        </button>
+                        <button onMouseDown={(e) => { e.preventDefault(); manipulateTable('deleteColumn'); }} title="Delete Column" className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
+                          <Columns className="w-4 h-4" /><MinusCircle className="w-3 h-3 -ml-1 text-rose-500" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+
                   <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-zinc-800' : 'bg-slate-200'}`} />
                   <label className={`p-2 rounded-lg transition-colors cursor-pointer ${darkMode ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-slate-100 text-slate-700'}`}>
                     <ImageIcon className="w-4 h-4" />
@@ -1467,7 +1584,7 @@ ${context}`;
                 <EditorBlock
                   content={activeNote?.content || ''}
                   onChange={content => setNotes(notes.map(n => n.id === activeNoteId ? { ...n, content } : n))}
-                  onSelectionChange={range => lastRangeRef.current = range}
+                  onSelectionChange={handleSelectionChange}
                   darkMode={darkMode}
                 />
               </div>
